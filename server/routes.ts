@@ -3,6 +3,8 @@ import { Server } from "http";
 import { WebSocketServer, WebSocket } from "ws";
 import * as alpaca from "./services/alpaca";
 import { generateCandlestickChart, generateVolumeChart } from "./services/chart";
+import { generateAnalysisChart } from "./services/chartAnalysis";
+import { aiAnalysis } from "./services/aiAnalysis";
 import { getHistoricalBars } from "./services/alpaca";
 
 const router = express.Router();
@@ -124,6 +126,32 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  app.get("/api/charts/analysis/:symbol", async (req, res) => {
+    try {
+      console.log(`[API] Generating analysis chart for ${req.params.symbol}`);
+      const bars = await getHistoricalBars(req.params.symbol, "4Hour", 200);
+
+      if (!bars || !Array.isArray(bars) || bars.length === 0) {
+        console.error("No bars data available");
+        return res.status(404).json({
+          error: "No data found",
+          details: `No bars available for ${req.params.symbol}`,
+        });
+      }
+
+      const image = await generateAnalysisChart(bars, req.params.symbol);
+      res.setHeader("Content-Type", "image/png");
+      res.setHeader("Cache-Control", "no-cache");
+      res.send(image);
+    } catch (error) {
+      console.error("Error generating analysis chart:", error);
+      res.status(500).json({
+        error: "Failed to generate analysis chart",
+        details: error instanceof Error ? error.message : "Unknown error",
+      });
+    }
+  });
+
   // REST endpoints
   app.get("/api/bars/:symbol", async (req, res) => {
     try {
@@ -219,6 +247,50 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } else {
       console.log("Login failed");
       res.status(401).json({ error: "Invalid credentials" });
+    }
+  });
+
+  // Chart analysis endpoint
+  app.post("/api/analyze/:symbol", async (req, res) => {
+    try {
+      console.log(`[API] Analyzing chart for ${req.params.symbol}`);
+      const timeframe = (req.query.timeframe as string) || "4Hour";
+
+      // Get historical data
+      const bars = await getHistoricalBars(req.params.symbol, timeframe, 200);
+      if (!bars || !Array.isArray(bars) || bars.length === 0) {
+        console.error("No bars data available");
+        return res.status(404).json({
+          error: "No data found",
+          details: `No bars available for ${req.params.symbol}`,
+        });
+      }
+
+      // Generate analysis chart
+      const chartImage = await generateAnalysisChart(bars, req.params.symbol);
+
+      // Analyze chart with AI
+      const analysis = await aiAnalysis.analyzeChart(chartImage, req.params.symbol, timeframe);
+
+      // Validate analysis
+      const isValid = await aiAnalysis.validateAnalysis(analysis);
+      if (!isValid) {
+        throw new Error("Invalid analysis result");
+      }
+
+      // Return analysis result
+      res.json({
+        symbol: req.params.symbol,
+        timeframe,
+        analysis,
+        timestamp: new Date().toISOString(),
+      });
+    } catch (error) {
+      console.error("[API] Error analyzing chart:", error);
+      res.status(500).json({
+        error: "Failed to analyze chart",
+        details: error instanceof Error ? error.message : "Unknown error",
+      });
     }
   });
 

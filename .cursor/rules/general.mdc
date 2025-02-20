@@ -1,0 +1,8 @@
+---
+description: general rules
+globs: *
+---
+
+# Your rule content
+
+every time u finish a task, mark as checked in the respective todo  list 
