@@ -1,0 +1,159 @@
+Core Trading System
+Specializes in US stock market trading through Alpaca
+Operates during US market hours (9:30 AM - 4:00 PM EST)
+Uses real-time market data from IEX (through Alpaca)
+Implements stock screening and selection
+Focuses on liquid, mid-to-large cap stocks
+Stock Screening Engine
+Filters stocks based on criteria:
+Minimum daily volume (1M+ shares)
+Market cap ($2B+)
+Price ($10+)
+ATR ratio (>2%)
+Relative volume (1.5x+)
+Updates screening results every 15 minutes
+Ranks stocks by technical and volatility scores
+Market Data Management
+Connects to Alpaca's WebSocket for real-time prices
+Handles multiple data streams:
+Trade data
+Quote data
+Bar data (minute/hour/day)
+Manages market hours and pre/post market data
+Implements automatic reconnection
+Stores historical data for analysis
+Technical Analysis Engine
+Calculates real-time indicators:
+EMA (50, 200 periods)
+MACD for trend confirmation
+RSI for momentum
+Bollinger Bands
+Volume analysis
+Identifies support/resistance levels
+Detects candlestick patterns
+Generates trading signals
+Risk Management System
+Position sizing rules:
+Maximum 2% account risk per trade
+Market cap-based position limits
+Liquidity-based sizing
+Volatility adjustments
+Portfolio constraints:
+Maximum 5 concurrent positions
+Sector exposure limits (20%)
+Correlation checks
+Market cap diversification
+Trade Execution
+Implements order types:
+Market orders
+Limit orders
+Stop orders
+Bracket orders (entry + stop-loss + take-profit)
+Handles partial fills
+Manages order modifications
+Tracks order status
+Web Dashboard
+Real-time displays:
+Account overview
+Open positions
+Order status
+Screener results
+Performance metrics
+Interactive charts with:
+Technical indicators
+Entry/exit points
+Volume profile
+Price levels
+Performance Analytics
+Tracks metrics:
+Win/loss ratio
+Profit factor
+Sharpe ratio
+Maximum drawdown
+Sector performance
+Generates reports:
+Daily P&L
+Position history
+Strategy performance
+Risk analysis
+Trading Rules
+Market timing:
+No trades first 30 minutes after open
+No new positions after 3:30 PM EST
+Close all positions by market close
+Entry conditions:
+Technical confirmation
+Volume requirements
+Price momentum
+Pattern completion
+Exit rules:
+Technical-based stops
+Profit targets
+Time-based exits
+Pattern invalidation
+System Monitoring
+Tracks:
+Alpaca API connection
+Market data feed status
+Order execution latency
+System performance
+Error conditions
+Implements:
+Automatic recovery
+Error logging
+Performance monitoring
+Health checks
+Data Management
+Stores:
+Historical price data
+Trading signals
+Order history
+Performance metrics
+System logs
+Implements:
+Data validation
+Backup procedures
+Clean-up routines
+Data integrity checks
+Security Features
+API key management
+User authentication
+Session handling
+Access control
+Activity logging
+Operational Workflow:
+Pre-Market
+Update stock universe
+Run initial screener
+Check system status
+Validate API connections
+Market Open
+Start data streams
+Begin technical analysis
+Monitor opening conditions
+Prepare trading signals
+Trading Hours
+Execute screening every 15 minutes
+Process real-time data
+Generate trading signals
+Manage positions
+Monitor risk levels
+Market Close
+Close open positions
+Generate daily reports
+Update performance metrics
+Backup daily data
+Key Differences from Forex Trading:
+Market hours constraints
+Stock-specific indicators
+Different position sizing rules
+Sector-based analysis
+Stock screening process
+Different volatility patterns
+Market-specific regulations
+The system is designed to be:
+Market-Appropriate: Optimized for US equity trading
+Time-Aware: Respects market hours
+Risk-Conscious: Stock-specific risk management
+Data-Driven: Uses multiple data points for decisions
+Performance-Focused: Tracks stock-specific metrics

@@ -1,0 +1,127 @@
+import type { Express } from "express";
+import { createServer, type Server } from "http";
+import { WebSocketServer, WebSocket } from 'ws';
+import * as alpaca from "./services/alpaca";
+
+export async function registerRoutes(app: Express): Promise<Server> {
+  const httpServer = createServer(app);
+
+  // Create a WebSocket server on the /ws path
+  const wss = new WebSocketServer({ 
+    server: httpServer,
+    path: '/ws'
+  });
+
+  // Handle incoming client WebSocket connections
+  wss.on('connection', (ws) => {
+    console.log('Client connected to WebSocket');
+    let alpacaWS: WebSocket | null = null;
+
+    const connectToAlpaca = () => {
+      console.log('Connecting to Alpaca WebSocket...');
+      alpacaWS = new WebSocket('wss://stream.data.alpaca.markets/v2/iex');
+
+      alpacaWS.onopen = () => {
+        console.log('Connected to Alpaca WebSocket, authenticating...');
+        const authMsg = {
+          action: 'auth',
+          key: process.env.APCA_API_KEY_ID,
+          secret: process.env.APCA_API_SECRET_KEY
+        };
+        alpacaWS?.send(JSON.stringify(authMsg));
+
+        // Subscribe to AAPL trades, quotes, and bars
+        const subscribeMsg = {
+          action: 'subscribe',
+          trades: ['AAPL'],
+          quotes: ['AAPL'],
+          bars: ['AAPL']
+        };
+        console.log('Subscribing to AAPL market data');
+        alpacaWS?.send(JSON.stringify(subscribeMsg));
+      };
+
+      alpacaWS.onmessage = (event) => {
+        try {
+          // Parse the incoming message data
+          const data = JSON.parse(
+            typeof event.data === 'string'
+              ? event.data
+              : Buffer.isBuffer(event.data)
+              ? event.data.toString()
+              : JSON.stringify(event.data)
+          );
+          console.log('Received from Alpaca:', data);
+
+          // Forward message to connected client if still open
+          if (ws.readyState === WebSocket.OPEN) {
+            ws.send(JSON.stringify(data));
+          }
+        } catch (error) {
+          console.error('Error processing Alpaca message:', error);
+        }
+      };
+
+      alpacaWS.onerror = (error) => {
+        console.error('Alpaca WebSocket error:', error);
+      };
+
+      alpacaWS.onclose = () => {
+        console.log('Alpaca WebSocket connection closed');
+        // Attempt to reconnect after 5 seconds
+        setTimeout(connectToAlpaca, 5000);
+      };
+    };
+
+    // Initiate connection to Alpaca
+    connectToAlpaca();
+
+    ws.on('error', (error) => {
+      console.error('Client WebSocket error:', error);
+    });
+
+    ws.on('close', () => {
+      console.log('Client disconnected');
+      if (alpacaWS) {
+        console.log('Closing Alpaca WebSocket connection');
+        alpacaWS.close();
+        alpacaWS = null;
+      }
+    });
+  });
+
+  // HTTP API routes
+  app.get("/api/bars/:symbol", async (req, res) => {
+    try {
+      console.log(`Fetching bars for symbol: ${req.params.symbol}`);
+      const bars = await alpaca.getBars(req.params.symbol);
+      console.log(`Successfully fetched ${bars.length} bars for ${req.params.symbol}`);
+      res.json(bars);
+    } catch (error) {
+      console.error(`Error fetching bars for ${req.params.symbol}:`, error);
+      res.status(500).json({ error: "Failed to fetch market data" });
+    }
+  });
+
+  app.get("/api/account", async (req, res) => {
+    try {
+      const account = await alpaca.getAccount();
+      res.json(account);
+    } catch (error) {
+      console.error('Error getting account:', error);
+      res.status(500).json({ error: "Failed to fetch account data" });
+    }
+  });
+
+  app.get("/api/positions", async (req, res) => {
+    try {
+      const positions = await alpaca.getPositions();
+      res.json(positions);
+    } catch (error) {
+      console.error('Error getting positions:', error);
+      res.status(500).json({ error: "Failed to fetch positions" });
+    }
+  });
+
+  return httpServer;
+}

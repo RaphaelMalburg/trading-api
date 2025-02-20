@@ -1,0 +1,157 @@
+Assume you have your Alpaca service file (e.g. services/alpaca.ts) already set up as follows:
+
+services/alpaca.ts
+
+ts
+Copy
+Edit
+import Alpaca from "@alpacahq/alpaca-trade-api";
+
+export interface Bar {
+  timestamp: string;
+  open: number;
+  high: number;
+  low: number;
+  close: number;
+  volume: number;
+}
+
+const alpaca = new Alpaca({
+  keyId: process.env.APCA_API_KEY_ID,
+  secretKey: process.env.APCA_API_SECRET_KEY,
+  paper: true,
+  feed: "iex",
+});
+
+export async function getBars(
+  symbol: string,
+  timeframe = "4H",
+  limit = 100
+) {
+  try {
+    console.log(`Fetching bars for ${symbol}, timeframe: ${timeframe}, limit: ${limit}`);
+
+    // For fetching previous bars, we calculate a start date.
+    // Here, we use 14 days ago which should cover 100 bars for shorter timeframes.
+    const startDate = new Date();
+    startDate.setDate(startDate.getDate() - 14);
+    const start = startDate.toISOString();
+    const end = new Date().toISOString();
+
+    console.log(`Using date range: ${start} to ${end}`);
+
+    // Call getBarsV2 with the provided parameters
+    const bars = await alpaca.getBarsV2(symbol, {
+      start,
+      end,
+      timeframe,
+      limit,
+      adjustment: "raw",
+    });
+
+    const results: Bar[] = [];
+    for await (const bar of bars) {
+      results.push({
+        timestamp: bar.Timestamp,
+        open: Number(bar.OpenPrice),
+        high: Number(bar.HighPrice),
+        low: Number(bar.LowPrice),
+        close: Number(bar.ClosePrice),
+        volume: Number(bar.Volume),
+      });
+    }
+
+    console.log(`Retrieved ${results.length} bars for ${symbol}`);
+    if (results.length > 0) {
+      console.log("First bar:", results[0]);
+      console.log("Last bar:", results[results.length - 1]);
+    }
+
+    return results;
+  } catch (error) {
+    console.error(`Error fetching bars for ${symbol}:`, error);
+    throw error;
+  }
+}
+
+export async function getAccount() {
+  try {
+    console.log("Fetching account information...");
+    const account = await alpaca.getAccount();
+    console.log("Account fetch successful:", account);
+    return account;
+  } catch (error) {
+    console.error("Error fetching account:", error);
+    throw error;
+  }
+}
+
+export async function getPositions() {
+  try {
+    console.log("Fetching positions...");
+    const positions = await alpaca.getPositions();
+    console.log(`Retrieved ${positions.length} positions:`, positions);
+    return positions;
+  } catch (error) {
+    console.error("Error fetching positions:", error);
+    throw error;
+  }
+}
+
+export async function placeOrder(
+  symbol: string,
+  qty: number,
+  side: "buy" | "sell",
+  type = "market"
+) {
+  try {
+    console.log(`Placing ${side} order for ${qty} ${symbol}`);
+    const order = await alpaca.createOrder({
+      symbol,
+      qty,
+      side,
+      type,
+      time_in_force: "day",
+    });
+    console.log("Order placed successfully:", order);
+    return order;
+  } catch (error) {
+    console.error("Error placing order:", error);
+    throw error;
+  }
+}
+
+export function getWebSocketConfig() {
+  return {
+    keyId: process.env.APCA_API_KEY_ID,
+    secretKey: process.env.APCA_API_SECRET_KEY,
+    feed: "iex",
+    paper: true,
+  };
+}
+Now, create an entry point file (for example, index.ts) that calls the getBars function for AAPL with a timeframe of "1Min" and a limit of 100:
+
+index.ts
+
+ts
+Copy
+Edit
+import { getBars } from "./services/alpaca";
+
+async function main() {
+  try {
+    // Fetch 100 1-minute bars for AAPL (OHLC data)
+    const ohlcData = await getBars("AAPL", "1Min", 100);
+    console.log("Fetched 100 OHLC bars for AAPL:");
+    console.table(ohlcData);
+  } catch (error) {
+    console.error("Error fetching AAPL OHLC data:", error);
+  }
+}
+
+main();
+How to Run
+Ensure your environment variables (APCA_API_KEY_ID and APCA_API_SECRET_KEY) are set.
+Compile (if using TypeScript) or run directly with a Node.js command.
+The console should display logs for fetching bars and then print a table of the 100 OHLC bars for AAPL.
+This setup will fetch the previous 100 bars for AAPL and display their OHLC and volume data in your console. Adjust the timeframe or limit as needed.
