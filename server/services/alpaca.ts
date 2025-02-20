@@ -8,18 +8,44 @@ if (!process.env.APCA_API_KEY_ID || !process.env.APCA_API_SECRET_KEY) {
 
 console.log("Using API Key:", process.env.APCA_API_KEY_ID);
 
+// Types
+interface Account {
+  equity: number;
+  buying_power: number;
+  cash: number;
+  portfolio_value: number;
+  day_trade_count: number;
+}
+
+interface Position {
+  symbol: string;
+  qty: number;
+  market_value: number;
+  unrealized_pl: number;
+  current_price: number;
+}
+
+interface AlpacaPosition {
+  symbol: string;
+  qty: string | number;
+  market_value: string | number;
+  unrealized_pl: string | number;
+  current_price: string | number;
+}
+
 // Initialize Alpaca client
 const alpaca = new Alpaca({
   keyId: process.env.APCA_API_KEY_ID,
   secretKey: process.env.APCA_API_SECRET_KEY,
   paper: true,
   feed: "iex",
+  baseUrl: "https://paper-api.alpaca.markets",
 });
 
 // Function to get historical bars
 async function getHistoricalBars(symbol: string, timeframe = "4Hour", limit = 100) {
   try {
-    console.log(`Fetching last ${limit} ${timeframe} bars for ${symbol}...`);
+    console.log(`[Alpaca] Fetching last ${limit} ${timeframe} bars for ${symbol}...`);
 
     // Calculate start date based on timeframe to ensure we get enough bars
     const end = new Date();
@@ -27,7 +53,9 @@ async function getHistoricalBars(symbol: string, timeframe = "4Hour", limit = 10
     const daysToFetch = timeframe === "4Hour" ? 30 : 5; // Fetch more days for 4-hour charts
     start.setDate(start.getDate() - daysToFetch);
 
-    console.log(`Fetching data from ${start.toISOString()} to ${end.toISOString()}`);
+    console.log(`[Alpaca] Date range: ${start.toISOString()} to ${end.toISOString()}`);
+    console.log(`[Alpaca] API Key: ${process.env.APCA_API_KEY_ID?.slice(0, 5)}...`);
+    console.log(`[Alpaca] Using feed: iex`);
 
     const resp = await alpaca.getBarsV2(symbol, {
       start: start.toISOString(),
@@ -37,31 +65,54 @@ async function getHistoricalBars(symbol: string, timeframe = "4Hour", limit = 10
       limit: limit,
     });
 
+    console.log(`[Alpaca] Got response from getBarsV2`);
+
     // Convert response to array
     const bars = [];
     for await (const bar of resp) {
       bars.push({
         timestamp: bar.Timestamp,
-        open: bar.OpenPrice,
-        high: bar.HighPrice,
-        low: bar.LowPrice,
-        close: bar.ClosePrice,
-        volume: bar.Volume,
+        open: Number(bar.OpenPrice),
+        high: Number(bar.HighPrice),
+        low: Number(bar.LowPrice),
+        close: Number(bar.ClosePrice),
+        volume: Number(bar.Volume),
       });
     }
 
     // Get the last 100 bars if we have more
     const lastBars = bars.slice(-limit);
 
-    console.log(`Retrieved ${lastBars.length} bars`);
+    console.log(`[Alpaca] Retrieved ${lastBars.length} bars`);
     if (lastBars.length > 0) {
-      console.log("First bar:", lastBars[0]);
-      console.log("Last bar:", lastBars[lastBars.length - 1]);
+      console.log("[Alpaca] First bar:", JSON.stringify(lastBars[0], null, 2));
+      console.log("[Alpaca] Last bar:", JSON.stringify(lastBars[lastBars.length - 1], null, 2));
+    } else {
+      console.log("[Alpaca] No bars retrieved");
+    }
+
+    // Validate data format
+    if (!Array.isArray(lastBars)) {
+      throw new Error("Invalid data format: bars is not an array");
+    }
+
+    for (const bar of lastBars) {
+      if (
+        !bar.timestamp ||
+        typeof bar.open !== "number" ||
+        typeof bar.high !== "number" ||
+        typeof bar.low !== "number" ||
+        typeof bar.close !== "number" ||
+        typeof bar.volume !== "number"
+      ) {
+        console.error("[Alpaca] Invalid bar format:", bar);
+        throw new Error("Invalid bar format: missing required fields or invalid types");
+      }
     }
 
     return lastBars;
   } catch (error) {
-    console.error("Error fetching bars:", error);
+    console.error("[Alpaca] Error fetching bars:", error);
     throw error;
   }
 }
@@ -121,13 +172,40 @@ ws.on("close", () => {
   console.log("WebSocket connection closed");
 });
 
-// Add these functions before the export statement
-async function getAccount() {
-  return await alpaca.getAccount();
+async function getAccount(): Promise<Account> {
+  try {
+    console.log("[Alpaca] Fetching account information...");
+    const account = await alpaca.getAccount();
+    console.log("[Alpaca] Account information fetched successfully");
+    return {
+      equity: Number(account.equity),
+      buying_power: Number(account.buying_power),
+      cash: Number(account.cash),
+      portfolio_value: Number(account.portfolio_value),
+      day_trade_count: Number(account.daytrade_count),
+    };
+  } catch (error) {
+    console.error("[Alpaca] Error fetching account:", error);
+    throw error;
+  }
 }
 
-async function getPositions() {
-  return await alpaca.getPositions();
+async function getPositions(): Promise<Position[]> {
+  try {
+    console.log("[Alpaca] Fetching positions...");
+    const positions = await alpaca.getPositions();
+    console.log("[Alpaca] Positions fetched successfully:", positions.length, "positions found");
+    return positions.map((position: AlpacaPosition) => ({
+      symbol: position.symbol,
+      qty: Number(position.qty),
+      market_value: Number(position.market_value),
+      unrealized_pl: Number(position.unrealized_pl),
+      current_price: Number(position.current_price),
+    }));
+  } catch (error) {
+    console.error("[Alpaca] Error fetching positions:", error);
+    throw error;
+  }
 }
 
 // Update exports

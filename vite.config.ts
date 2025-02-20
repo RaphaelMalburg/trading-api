@@ -12,15 +12,26 @@ export default defineConfig({
     react(),
     runtimeErrorOverlay(),
     themePlugin(),
-    ...(process.env.NODE_ENV !== "production" &&
-    process.env.REPL_ID !== undefined
-      ? [
-          await import("@replit/vite-plugin-cartographer").then((m) =>
-            m.cartographer(),
-          ),
-        ]
-      : []),
+    ...(process.env.NODE_ENV !== "production" && process.env.REPL_ID !== undefined ? [await import("@replit/vite-plugin-cartographer").then((m) => m.cartographer())] : []),
   ],
+  server: {
+    proxy: {
+      "/api": {
+        target: "http://localhost:5000",
+        changeOrigin: true,
+        secure: false,
+        proxyTimeout: 60000,
+        timeout: 60000,
+        headers: {
+          Connection: "keep-alive",
+        },
+      },
+      "/ws": {
+        target: "ws://localhost:5000",
+        ws: true,
+      },
+    },
+  },
   resolve: {
     alias: {
       "@": path.resolve(__dirname, "client", "src"),

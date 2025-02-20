@@ -1,4 +1,4 @@
-import { apiRequest } from './queryClient';
+import { apiRequest } from "./queryClient";
 
 export interface Bar {
   timestamp: string;
@@ -12,17 +12,43 @@ export interface Bar {
 export interface Position {
   symbol: string;
   qty: number;
-  market_value: number;
-  unrealized_pl: number;
-  current_price: number;
+  avg_entry_price: string;
+  market_value: string;
+  unrealized_pl: string;
+  current_price: string;
+  lastday_price: string;
+  change_today: string;
+  side: string;
 }
 
 export interface Account {
-  equity: number;
-  buying_power: number;
-  cash: number;
-  portfolio_value: number;
-  day_trade_count: number;
+  id: string;
+  account_number: string;
+  status: string;
+  currency: string;
+  buying_power: string;
+  regt_buying_power: string;
+  daytrading_buying_power: string;
+  cash: string;
+  portfolio_value: string;
+  pattern_day_trader: boolean;
+  trading_blocked: boolean;
+  transfers_blocked: boolean;
+  account_blocked: boolean;
+  created_at: string;
+  trade_suspended_by_user: boolean;
+  multiplier: string;
+  shorting_enabled: boolean;
+  equity: string;
+  last_equity: string;
+  long_market_value: string;
+  short_market_value: string;
+  initial_margin: string;
+  maintenance_margin: string;
+  last_maintenance_margin: string;
+  sma: string;
+  daytrade_count: number;
+  positions: Position[];
 }
 
 export class AlpacaStream {
@@ -36,14 +62,14 @@ export class AlpacaStream {
 
   private connect() {
     try {
-      const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+      const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
       const wsUrl = `${protocol}//${window.location.host}/ws`;
-      console.log('Connecting to WebSocket:', wsUrl);
+      console.log("Connecting to WebSocket:", wsUrl);
 
       this.ws = new WebSocket(wsUrl);
 
       this.ws.onopen = () => {
-        console.log('WebSocket connected');
+        console.log("WebSocket connected");
       };
 
       this.ws.onmessage = (event) => {
@@ -51,27 +77,27 @@ export class AlpacaStream {
           const data = JSON.parse(event.data);
           if (!Array.isArray(data)) return;
 
-          console.log('Received bar data:', data);
+          console.log("Received bar data:", data);
 
           // Send bar updates to chart
-          if (this.barHandler) {
-            data.forEach(bar => this.barHandler(bar));
+          if (this.barHandler && typeof this.barHandler === "function") {
+            data.forEach((bar) => this.barHandler!(bar));
           }
         } catch (error) {
-          console.error('Error processing message:', error);
+          console.error("Error processing message:", error);
         }
       };
 
       this.ws.onclose = () => {
-        console.log('WebSocket disconnected, reconnecting in 5s...');
+        console.log("WebSocket disconnected, reconnecting in 5s...");
         this.scheduleReconnect();
       };
 
       this.ws.onerror = (error) => {
-        console.error('WebSocket error:', error);
+        console.error("WebSocket error:", error);
       };
     } catch (error) {
-      console.error('Error creating WebSocket:', error);
+      console.error("Error creating WebSocket:", error);
       this.scheduleReconnect();
     }
   }
@@ -85,12 +111,12 @@ export class AlpacaStream {
   }
 
   public onBar(handler: (data: any) => void) {
-    console.log('Registering bar handler');
+    console.log("Registering bar handler");
     this.barHandler = handler;
   }
 
   public disconnect() {
-    console.log('Disconnecting WebSocket');
+    console.log("Disconnecting WebSocket");
     if (this.ws) {
       this.ws.close();
       this.ws = null;
@@ -103,16 +129,16 @@ export class AlpacaStream {
   }
 }
 
-export async function getBars(symbol: string, timeframe = '4H'): Promise<Bar[]> {
+export async function getBars(symbol: string, timeframe = "4H"): Promise<Bar[]> {
   try {
-    const response = await apiRequest('GET', `/api/bars/${symbol}?timeframe=${timeframe}`);
-    return response.map((bar: any) => ({
+    const response = await apiRequest<any[]>("GET", `/api/bars/${symbol}?timeframe=${timeframe}`);
+    return response.map((bar) => ({
       timestamp: bar.timestamp,
       open: Number(bar.open),
       high: Number(bar.high),
       low: Number(bar.low),
       close: Number(bar.close),
-      volume: Number(bar.volume)
+      volume: Number(bar.volume),
     }));
   } catch (error) {
     console.error(`Error fetching bars for ${symbol}:`, error);
@@ -122,56 +148,44 @@ export async function getBars(symbol: string, timeframe = '4H'): Promise<Bar[]> 
 
 export async function getAccount(): Promise<Account> {
   try {
-    return await apiRequest('GET', '/api/account');
+    return await apiRequest("GET", "/api/account");
   } catch (error) {
-    console.error('Error fetching account:', error);
+    console.error("Error fetching account:", error);
     throw error;
   }
 }
 
 export async function getPositions(): Promise<Position[]> {
   try {
-    return await apiRequest('GET', '/api/positions');
+    return await apiRequest("GET", "/api/positions");
   } catch (error) {
-    console.error('Error fetching positions:', error);
+    console.error("Error fetching positions:", error);
     throw error;
   }
 }
 
-export async function placeTrade(
-  symbol: string,
-  quantity: number,
-  side: 'buy' | 'sell'
-): Promise<any> {
-  const response = await apiRequest('POST', '/api/trade', {
+export async function placeTrade(symbol: string, quantity: number, side: "buy" | "sell"): Promise<any> {
+  const response = await apiRequest("POST", "/api/trade", {
     symbol,
     quantity,
-    side
+    side,
   });
   return response;
 }
 
 export async function analyzeChart(chartData: any): Promise<any> {
-  const response = await apiRequest('POST', '/api/analyze', chartData);
+  const response = await apiRequest("POST", "/api/analyze", chartData);
   return response;
 }
 
-export function calculatePositionSize(
-  equity: number,
-  riskPerTrade: number,
-  stopLossPercent: number
-): number {
+export function calculatePositionSize(equity: number, riskPerTrade: number, stopLossPercent: number): number {
   const riskAmount = equity * (riskPerTrade / 100);
   const positionSize = riskAmount / (stopLossPercent / 100);
   return Math.floor(positionSize);
 }
 
-export function calculateStopLoss(
-  entryPrice: number,
-  side: 'buy' | 'sell',
-  stopLossPercent: number
-): number {
-  if (side === 'buy') {
+export function calculateStopLoss(entryPrice: number, side: "buy" | "sell", stopLossPercent: number): number {
+  if (side === "buy") {
     return entryPrice * (1 - stopLossPercent / 100);
   } else {
     return entryPrice * (1 + stopLossPercent / 100);
@@ -208,7 +222,7 @@ export function calculateRSI(data: number[], period: number = 14): number[] {
     avgLoss = (avgLoss * (period - 1) + losses[i - 1]) / period;
 
     const rs = avgGain / avgLoss;
-    rsi.push(100 - (100 / (1 + rs)));
+    rsi.push(100 - 100 / (1 + rs));
   }
 
   return rsi;
