@@ -47,8 +47,6 @@ const alpaca = new AlpacaApi({
 // Function to get historical bars
 async function getHistoricalBars(symbol: string, timeframe = "4Hour", limit = 100, startDate?: Date, endDate?: Date) {
   try {
-    console.log(`[Alpaca] Fetching ${timeframe} bars for ${symbol}...`);
-
     // Calculate default dates if not provided
     const now = new Date();
     let end = endDate ? new Date(endDate) : now;
@@ -56,7 +54,6 @@ async function getHistoricalBars(symbol: string, timeframe = "4Hour", limit = 10
 
     // If dates are in the future, adjust them to current time
     if (end > now) {
-      console.log("[Alpaca] Warning: End date is in the future. Using current time.");
       end = now;
     }
 
@@ -79,9 +76,6 @@ async function getHistoricalBars(symbol: string, timeframe = "4Hour", limit = 10
       start.setDate(start.getDate() - (minDaysNeeded - daysDiff + 5)); // Add extra days for safety
     }
 
-    console.log(`[Alpaca] Requesting bars from ${start.toISOString()} to ${end.toISOString()}`);
-    console.log(`[Alpaca] API Key: ${process.env.APCA_API_KEY_ID?.slice(0, 5)}...`);
-
     const resp = await alpaca.getBarsV2(symbol, {
       start: start.toISOString(),
       end: end.toISOString(),
@@ -89,8 +83,6 @@ async function getHistoricalBars(symbol: string, timeframe = "4Hour", limit = 10
       feed: "iex",
       adjustment: "all", // Include all adjustments
     });
-
-    console.log(`[Alpaca] Got response from getBarsV2`);
 
     // Convert response to array
     const bars = [];
@@ -105,26 +97,7 @@ async function getHistoricalBars(symbol: string, timeframe = "4Hour", limit = 10
       });
     }
 
-    // Log detailed bar information
-    console.log(`[Alpaca] Retrieved ${bars.length} bars`);
-    if (bars.length > 0) {
-      console.log(`[Alpaca] First bar: ${JSON.stringify(bars[0], null, 2)}`);
-      console.log(`[Alpaca] Last bar: ${JSON.stringify(bars[bars.length - 1], null, 2)}`);
-
-      // Log time gaps
-      for (let i = 1; i < bars.length; i++) {
-        const timeDiff = new Date(bars[i].timestamp).getTime() - new Date(bars[i - 1].timestamp).getTime();
-        const hoursDiff = timeDiff / (1000 * 60 * 60);
-        if (hoursDiff > 4) {
-          console.log(`[Alpaca] Time gap detected between bars ${i - 1} and ${i}: ${hoursDiff} hours`);
-        }
-      }
-    } else {
-      console.log("[Alpaca] No bars retrieved");
-      console.log("[Alpaca] This might be due to:");
-      console.log("- Market being closed during the requested period");
-      console.log("- Future dates with no data");
-      console.log("- No trading activity in the specified timeframe");
+    if (bars.length === 0) {
       throw new Error("No historical data available for the specified period");
     }
 

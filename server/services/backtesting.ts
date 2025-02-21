@@ -63,8 +63,7 @@ class BacktestingService {
     riskPerTrade: number = 0.01
   ): Promise<BacktestResult> {
     try {
-      console.log(`[Backtest] Starting backtest for ${symbol}`);
-      console.log(`[Backtest] Date range: ${startDate.toISOString()} to ${endDate.toISOString()}`);
+      console.log(`[Backtest] Starting backtest for ${symbol} from ${startDate.toISOString()} to ${endDate.toISOString()}`);
 
       // Validate dates
       if (startDate > endDate) {
@@ -79,77 +78,46 @@ class BacktestingService {
         throw new Error(`Insufficient historical data. Need at least 60 bars, but got ${bars.length}. This could be due to market holidays or limited market hours.`);
       }
 
-      // Log bar timestamps for debugging
-      console.log(`[Backtest] First bar timestamp: ${new Date(bars[0].timestamp).toISOString()}`);
-      console.log(`[Backtest] Last bar timestamp: ${new Date(bars[bars.length - 1].timestamp).toISOString()}`);
-      console.log(`[Backtest] Total bars: ${bars.length}`);
-
       const positions: Position[] = [];
-      const equityCurve: { timestamp: string; balance: number }[] = [];
+      const equityCurve: { timestamp: string; balance: number }[] = [{ timestamp: bars[0].timestamp, balance: initialBalance }];
       let balance = initialBalance;
       const analysisHistory: { timestamp: string; chart_image: string; analysis_result: any }[] = [];
 
-      console.log(`[Backtest] Processing ${bars.length} bars in batches`);
-      const batchSize = 5; // Process 5 bars at a time
-      const delay = 2000; // 2 second delay between batches
+      // Process each bar
+      for (let i = 60; i < bars.length; i++) {
+        const currentBar = bars[i];
 
-      // Process bars in batches
-      for (let i = 60; i < bars.length; i += batchSize) {
-        const batchEnd = Math.min(i + batchSize, bars.length);
-        console.log(`[Backtest] Processing batch ${i / batchSize + 1}/${Math.ceil((bars.length - 60) / batchSize)}`);
+        // Update open positions
+        await this.updateOpenPositions(positions, currentBar, balance);
 
-        // Process each bar in the current batch
-        for (let j = i; j < batchEnd; j++) {
-          const currentBar = bars[j];
-          console.log(`[Backtest] Processing bar ${j}/${bars.length - 1}: ${currentBar.timestamp}`);
+        try {
+          // Get the last 60 bars for analysis
+          const analysisWindow = bars.slice(i - 60, i + 1);
+          const chartImage = await generateAnalysisChart(analysisWindow, symbol);
+          const analysis = await aiAnalysis.analyzeChart(symbol, timeframe, balance, positions);
 
-          // Update open positions
-          await this.updateOpenPositions(positions, currentBar, balance);
+          // Save analysis history
+          analysisHistory.push({
+            timestamp: currentBar.timestamp,
+            chart_image: chartImage.toString("base64"),
+            analysis_result: analysis,
+          });
 
-          // Generate chart and analyze
-          try {
-            // Get the last 60 bars for analysis
-            const analysisWindow = bars.slice(j - 60, j + 1);
-            console.log(`[Backtest] Generating chart for analysis window of ${analysisWindow.length} bars`);
-
-            const chartImage = await generateAnalysisChart(analysisWindow, symbol);
-            console.log(`[Backtest] Chart generated, size: ${chartImage.length} bytes`);
-
-            const analysis = await aiAnalysis.analyzeChart(symbol, timeframe, balance, positions);
-            console.log(`[Backtest] AI Analysis completed with confidence: ${analysis.confidence}`);
-
-            // Save analysis history
-            analysisHistory.push({
-              timestamp: currentBar.timestamp,
-              chart_image: chartImage.toString("base64"),
-              analysis_result: analysis,
-            });
-
-            console.log(`[Backtest] Analysis history entry added for ${currentBar.timestamp}`);
-            console.log(`[Backtest] Current analysis history size: ${analysisHistory.length}`);
-
-            // Execute trades based on analysis
-            if (positions.length < 3 && analysis.recommendation.action !== "hold" && analysis.confidence >= 75) {
-              const position = await this.executePosition(symbol, analysis, currentBar, balance, riskPerTrade);
-              if (position) {
-                positions.push(position);
-                console.log(`[Backtest] Opened new position:`, { side: position.side, entry_price: position.entry_price, size: position.size });
-              }
+          // Execute trades based on analysis
+          if (positions.length < 3 && analysis.recommendation.action !== "hold" && analysis.confidence >= 75) {
+            const position = await this.executePosition(symbol, analysis, currentBar, balance, riskPerTrade);
+            if (position) {
+              positions.push(position);
+              console.log(`[Backtest] New position opened: ${position.side} ${position.size} units at ${position.entry_price}`);
             }
-          } catch (error) {
-            console.error(`[Backtest] Error analyzing bar ${currentBar.timestamp}:`, error);
           }
-
-          // Update equity curve
-          balance = this.calculateCurrentBalance(balance, positions);
-          equityCurve.push({ timestamp: currentBar.timestamp, balance });
+        } catch (error) {
+          console.error(`[Backtest] Error analyzing bar ${currentBar.timestamp}:`, error);
         }
 
-        // Add delay between batches
-        if (batchEnd < bars.length) {
-          console.log(`[Backtest] Waiting ${delay}ms before next batch...`);
-          await new Promise((resolve) => setTimeout(resolve, delay));
-        }
+        // Update equity curve
+        balance = this.calculateCurrentBalance(balance, positions);
+        equityCurve.push({ timestamp: currentBar.timestamp, balance });
       }
 
       // Close any remaining positions
@@ -158,21 +126,36 @@ class BacktestingService {
       // Calculate final statistics
       const stats = this.calculateStatistics(positions, initialBalance, balance, equityCurve);
 
-      console.log(`[Backtest] Completed backtest for ${symbol}:`, { total_trades: positions.length, win_rate: stats.win_rate, profit_factor: stats.profit_factor });
-      console.log(`[Backtest] Analysis history entries: ${analysisHistory.length}`);
+      console.log(`[Backtest] Completed backtest for ${symbol}:`, {
+        total_trades: positions.length,
+        win_rate: stats.win_rate,
+        profit_factor: stats.profit_factor,
+        final_balance: balance,
+        analysis_count: analysisHistory.length,
+      });
 
-      return {
+      const result: BacktestResult = {
         symbol,
         timeframe,
         start_date: startDate.toISOString(),
         end_date: endDate.toISOString(),
-        initial_balance: initialBalance,
+        initial_balance: Number(initialBalance),
         final_balance: Number(balance),
-        ...stats,
+        total_trades: stats.total_trades,
+        winning_trades: stats.winning_trades,
+        losing_trades: stats.losing_trades,
+        win_rate: Number(stats.win_rate),
+        average_win: Number(stats.average_win),
+        average_loss: Number(stats.average_loss),
+        profit_factor: Number(stats.profit_factor),
+        max_drawdown: Number(stats.max_drawdown),
+        max_drawdown_percentage: Number(stats.max_drawdown_percentage),
         trades: positions,
         equity_curve: equityCurve,
         analysis_history: analysisHistory,
       };
+
+      return result;
     } catch (error) {
       console.error(`[Backtest] Error running backtest:`, error);
       throw error;
@@ -252,10 +235,11 @@ class BacktestingService {
     let peak = initialBalance;
 
     equityCurve.forEach((point) => {
-      if (point.balance > peak) {
-        peak = point.balance;
+      const balance = Number(point.balance);
+      if (balance > peak) {
+        peak = balance;
       }
-      const drawdown = peak - point.balance;
+      const drawdown = peak - balance;
       const drawdownPercentage = (drawdown / peak) * 100;
 
       if (drawdown > maxDrawdown) {
@@ -268,10 +252,10 @@ class BacktestingService {
       total_trades: closedPositions.length,
       winning_trades: winningTrades.length,
       losing_trades: losingTrades.length,
-      win_rate: winningTrades.length / closedPositions.length,
+      win_rate: winningTrades.length / (closedPositions.length || 1),
       average_win: winningTrades.length > 0 ? totalWins / winningTrades.length : 0,
       average_loss: losingTrades.length > 0 ? totalLosses / losingTrades.length : 0,
-      profit_factor: totalLosses > 0 ? totalWins / totalLosses : totalWins,
+      profit_factor: totalLosses > 0 ? totalWins / totalLosses : totalWins > 0 ? Infinity : 0,
       max_drawdown: maxDrawdown,
       max_drawdown_percentage: maxDrawdownPercentage,
     };

@@ -1,5 +1,5 @@
-import { alpaca } from "./alpaca";
-import { riskManagement } from "./riskManagement";
+import { alpaca } from "./alpaca.js";
+import { riskManagement } from "./riskManagement.js";
 
 interface TradeOrder {
   symbol: string;

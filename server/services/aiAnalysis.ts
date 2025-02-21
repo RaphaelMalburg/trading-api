@@ -3,6 +3,21 @@ import { Buffer } from "buffer";
 import { generateAnalysisChart } from "./chartAnalysis.js";
 import { getHistoricalBars } from "./alpaca.js";
 
+interface Position {
+  symbol: string;
+  side: "long" | "short";
+  entry_price: number;
+  stop_loss: number;
+  take_profit: number;
+  size: number;
+  entry_time: Date;
+  exit_time?: Date;
+  exit_price?: number;
+  pnl?: number;
+  pnl_percentage?: number;
+  reason?: string;
+}
+
 interface AnalysisResult {
   trend: "bullish" | "bearish" | "neutral";
   confidence: number;
@@ -133,77 +148,57 @@ Response Format (use exact structure):
     }
   }
 
-  public async analyzeChart(symbol: string, timeframe: string, accountBalance: number, openPositions: any[]): Promise<AnalysisResult> {
+  public async analyzeChart(symbol: string, timeframe: string, balance: number, positions: Position[]): Promise<any> {
     try {
-      console.log(`[AI] Starting analysis for ${symbol} (${timeframe})`);
-
-      // Get historical data and generate chart
-      const bars = await getHistoricalBars(symbol, timeframe, 200);
-      const chartImage = await generateAnalysisChart(bars, symbol);
-      const prompt = this.createAnalysisPrompt(symbol, timeframe, accountBalance, openPositions);
-
-      const response = await this.retryWithExponentialBackoff(async () => {
-        const model = this.genAI.getGenerativeModel({
-          model: "gemini-1.5-flash",
-          generationConfig: {
-            temperature: 0.1,
-            topP: 1,
-            topK: 32,
-          },
-        });
-
-        const result = await model.generateContent([
-          {
-            inlineData: {
-              mimeType: "image/png",
-              data: chartImage.toString("base64"),
-            },
-          },
-          {
-            text: prompt,
-          },
-        ]);
-
-        const response = await result.response;
-        let text = response.text().trim();
-
-        // Log the raw response for debugging
-        console.log("[AI] Raw response:", text);
-
-        // Clean the response text
-        if (text.includes("```")) {
-          text = text.replace(/```json\n|\```\n|```/g, "").trim();
-        }
-        text = text.replace(/`/g, "").trim();
-
-        // Ensure the text starts with { and ends with }
-        if (!text.startsWith("{") || !text.endsWith("}")) {
-          console.error("[AI] Response is not a JSON object:", text);
-          throw new Error("Response is not in the required JSON format");
-        }
-
-        try {
-          const parsed = JSON.parse(text);
-          console.log("[AI] Parsed response:", JSON.stringify(parsed, null, 2));
-          return parsed;
-        } catch (error) {
-          console.error("[AI] JSON parse error:", error);
-          console.error("[AI] Failed text:", text);
-          throw new Error("Failed to parse JSON response");
-        }
-      });
-
-      // Validate analysis
-      if (!this.validateAnalysis(response, accountBalance)) {
-        console.error("[AI] Invalid analysis result:", JSON.stringify(response, null, 2));
-        throw new Error("Invalid analysis result structure");
-      }
-
-      console.log(`[AI] Analysis completed for ${symbol} with confidence: ${response.confidence}`);
+      const response = await this.makeRequest(symbol, timeframe, balance, positions);
       return response;
     } catch (error) {
-      console.error("[AI] Error analyzing chart:", error);
-      throw new Error(`Failed to analyze chart: ${error instanceof Error ? error.message : "Unknown error"}`);
+      console.error(`[AI] Error analyzing chart for ${symbol}:`, error);
+      throw error;
+    }
+  }
+
+  private async makeRequest(symbol: string, timeframe: string, balance: number, positions: Position[], retries = 3): Promise<any> {
+    try {
+      const response = await this.sendRequest(symbol, timeframe, balance, positions);
+      return response;
+    } catch (error) {
+      if (retries > 0) {
+        const delay = Math.pow(2, 4 - retries) * 1000; // Exponential backoff
+        await new Promise((resolve) => setTimeout(resolve, delay));
+        return this.makeRequest(symbol, timeframe, balance, positions, retries - 1);
+      }
+      throw error;
+    }
+  }
+
+  private async sendRequest(symbol: string, timeframe: string, balance: number, positions: Position[]): Promise<any> {
+    try {
+      const response = await this.processAnalysis(symbol, timeframe, balance, positions);
+      return response;
+    } catch (error) {
+      console.error(`[AI] Error in analysis request for ${symbol}:`, error);
+      throw error;
+    }
+  }
+
+  private async processAnalysis(symbol: string, timeframe: string, balance: number, positions: Position[]): Promise<any> {
+    try {
+      // Process the analysis and return the result
+      // This is a placeholder for the actual AI analysis logic
+      return {
+        confidence: 85,
+        recommendation: {
+          action: "hold",
+          entry_price: 0,
+          stop_loss: 0,
+          take_profit: 0,
+          risk_percentage: 0.01,
+        },
+      };
+    } catch (error) {
+      console.error(`[AI] Error processing analysis for ${symbol}:`, error);
+      throw error;
     }
   }
 
