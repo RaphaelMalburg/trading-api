@@ -53,108 +53,123 @@ export function BacktestDetail({ backtestId }: BacktestDetailProps) {
 
   // Render the analysis section with safe JSON parsing
   const renderAnalysis = (analysis: any) => {
-    const supportLevels = safeJsonParse(analysis.supportLevels, []);
-    const resistanceLevels = safeJsonParse(analysis.resistanceLevels, []);
-    const signals = safeJsonParse(analysis.signals, []);
-    const patterns = safeJsonParse(analysis.patterns, []);
+    const chartImage = analysis.chart_image;
+    const analysisData = safeJsonParse(analysis.analysis_result, {});
 
     return (
-      <Card key={analysis.id}>
-        <CardContent className="p-6">
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            {/* Chart Image */}
-            <div className="w-full">
-              <h3 className="text-lg font-semibold mb-2">Market Analysis at {new Date(analysis.timestamp).toLocaleString()}</h3>
-              <img src={`data:image/png;base64,${analysis.chartImage}`} alt={`Analysis chart at ${analysis.timestamp}`} className="w-full rounded-lg shadow-lg" />
+      <div className="grid grid-cols-2 gap-4 p-4 border rounded-lg mb-4 bg-white">
+        <div className="col-span-1">
+          <h4 className="text-lg font-semibold mb-2">Chart Analysis</h4>
+          {chartImage && <img src={`data:image/png;base64,${chartImage}`} alt="Analysis Chart" className="w-full rounded-lg shadow-sm" />}
+        </div>
+
+        <div className="col-span-1 space-y-4">
+          <div>
+            <h4 className="text-lg font-semibold mb-2">Market Analysis</h4>
+            <div className="space-y-2">
+              <div className="flex items-center justify-between">
+                <span className="text-gray-600">Trend:</span>
+                <Badge variant={analysisData.trend === "bullish" ? "default" : analysisData.trend === "bearish" ? "destructive" : "secondary"}>{analysisData.trend || "N/A"}</Badge>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="text-gray-600">Confidence:</span>
+                <Badge variant={analysisData.confidence >= 80 ? "default" : analysisData.confidence >= 60 ? "secondary" : "destructive"}>{analysisData.confidence || 0}%</Badge>
+              </div>
             </div>
+          </div>
 
-            {/* Analysis Details */}
-            <div className="space-y-4">
+          <div>
+            <h4 className="text-lg font-semibold mb-2">Key Levels</h4>
+            <div className="space-y-2">
               <div>
-                <h3 className="text-lg font-semibold mb-2">Market Conditions</h3>
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <h4 className="text-sm font-medium text-gray-500">Trend</h4>
-                    <p className="text-lg">{analysis.trend || "N/A"}</p>
-                  </div>
-                  <div>
-                    <h4 className="text-sm font-medium text-gray-500">Confidence</h4>
-                    <p className="text-lg">{analysis.confidence ? `${(analysis.confidence * 100).toFixed(1)}%` : "N/A"}</p>
-                  </div>
+                <span className="text-gray-600">Support:</span>
+                <div className="flex flex-wrap gap-2 mt-1">
+                  {analysisData.key_levels?.support?.map((level: number, idx: number) => (
+                    <Badge key={idx} variant="outline">
+                      {level.toFixed(2)}
+                    </Badge>
+                  )) || "N/A"}
                 </div>
               </div>
-
               <div>
-                <h3 className="text-lg font-semibold mb-2">Key Levels</h3>
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <h4 className="text-sm font-medium text-gray-500">Support</h4>
-                    <p className="text-sm">
-                      {Array.isArray(supportLevels) && supportLevels.length > 0 ? supportLevels.map((level: number) => `$${level.toFixed(2)}`).join(", ") : "N/A"}
-                    </p>
-                  </div>
-                  <div>
-                    <h4 className="text-sm font-medium text-gray-500">Resistance</h4>
-                    <p className="text-sm">
-                      {Array.isArray(resistanceLevels) && resistanceLevels.length > 0 ? resistanceLevels.map((level: number) => `$${level.toFixed(2)}`).join(", ") : "N/A"}
-                    </p>
-                  </div>
+                <span className="text-gray-600">Resistance:</span>
+                <div className="flex flex-wrap gap-2 mt-1">
+                  {analysisData.key_levels?.resistance?.map((level: number, idx: number) => (
+                    <Badge key={idx} variant="outline">
+                      {level.toFixed(2)}
+                    </Badge>
+                  )) || "N/A"}
                 </div>
               </div>
+            </div>
+          </div>
 
-              <div>
-                <h3 className="text-lg font-semibold mb-2">Trading Signals</h3>
-                <div className="grid grid-cols-2 gap-4">
-                  {Array.isArray(signals) &&
-                    signals.map((signal: any, idx: number) => (
-                      <div key={idx}>
-                        <h4 className="text-sm font-medium text-gray-500">{signal.name}</h4>
-                        <Badge variant={signal.value ? "default" : "secondary"}>{signal.value ? "Active" : "Inactive"}</Badge>
-                      </div>
-                    ))}
-                </div>
+          <div>
+            <h4 className="text-lg font-semibold mb-2">Trading Signals</h4>
+            <div className="grid grid-cols-3 gap-2">
+              <div className="text-center">
+                <Badge variant={analysisData.signals?.ema_pullback ? "default" : "secondary"}>EMA Pullback</Badge>
               </div>
-
-              <div>
-                <h3 className="text-lg font-semibold mb-2">Trade Recommendation</h3>
-                <div className="space-y-2">
-                  <div className="flex items-center gap-2">
-                    <Badge variant={analysis.action === "buy" ? "default" : analysis.action === "sell" ? "destructive" : "secondary"}>{analysis.action || "HOLD"}</Badge>
-                    {analysis.riskPercentage && <Badge variant="outline">Risk: {(analysis.riskPercentage * 100).toFixed(1)}%</Badge>}
-                  </div>
-                  {analysis.entryPrice && (
-                    <div className="grid grid-cols-3 gap-2 text-sm">
-                      <div>
-                        <span className="font-medium">Entry:</span> ${analysis.entryPrice.toFixed(2)}
-                      </div>
-                      <div>
-                        <span className="font-medium">Stop:</span> ${analysis.stopLoss.toFixed(2)}
-                      </div>
-                      <div>
-                        <span className="font-medium">Target:</span> ${analysis.takeProfit.toFixed(2)}
-                      </div>
-                    </div>
-                  )}
-                  {analysis.reasoning && <p className="text-sm text-gray-600 mt-2">{analysis.reasoning}</p>}
-                </div>
+              <div className="text-center">
+                <Badge variant={analysisData.signals?.mean_reversion ? "default" : "secondary"}>Mean Reversion</Badge>
               </div>
+              <div className="text-center">
+                <Badge variant={analysisData.signals?.breakout ? "default" : "secondary"}>Breakout</Badge>
+              </div>
+            </div>
+          </div>
 
-              {patterns && patterns.length > 0 && (
-                <div>
-                  <h3 className="text-lg font-semibold mb-2">Patterns Detected</h3>
-                  <div className="flex flex-wrap gap-2">
-                    {patterns.map((pattern: any, idx: number) => (
-                      <Badge key={idx} variant="outline">
-                        {pattern.name} ({pattern.confidence}%)
-                      </Badge>
-                    ))}
+          <div>
+            <h4 className="text-lg font-semibold mb-2">Patterns</h4>
+            <div className="space-y-2">
+              {analysisData.patterns?.map((pattern: any, idx: number) => (
+                <div key={idx} className="flex items-center justify-between">
+                  <span className="text-gray-600">{pattern.name}:</span>
+                  <Badge variant={pattern.confidence >= 80 ? "default" : "secondary"}>{pattern.confidence}%</Badge>
+                </div>
+              )) || "No patterns detected"}
+            </div>
+          </div>
+
+          <div>
+            <h4 className="text-lg font-semibold mb-2">Recommendation</h4>
+            <div className="space-y-2">
+              <div className="flex items-center justify-between">
+                <span className="text-gray-600">Action:</span>
+                <Badge variant={analysisData.recommendation?.action === "buy" ? "default" : analysisData.recommendation?.action === "sell" ? "destructive" : "secondary"}>
+                  {analysisData.recommendation?.action || "N/A"}
+                </Badge>
+              </div>
+              {analysisData.recommendation?.action !== "hold" && (
+                <>
+                  <div className="flex items-center justify-between">
+                    <span className="text-gray-600">Entry Price:</span>
+                    <span>{analysisData.recommendation?.entry_price?.toFixed(2) || "N/A"}</span>
                   </div>
+                  <div className="flex items-center justify-between">
+                    <span className="text-gray-600">Stop Loss:</span>
+                    <span>{analysisData.recommendation?.stop_loss?.toFixed(2) || "N/A"}</span>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <span className="text-gray-600">Take Profit:</span>
+                    <span>{analysisData.recommendation?.take_profit?.toFixed(2) || "N/A"}</span>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <span className="text-gray-600">Risk %:</span>
+                    <span>{analysisData.recommendation?.risk_percentage?.toFixed(1)}%</span>
+                  </div>
+                </>
+              )}
+              {analysisData.recommendation?.reasoning && (
+                <div className="mt-2">
+                  <span className="text-gray-600">Reasoning:</span>
+                  <p className="mt-1 text-sm">{analysisData.recommendation.reasoning}</p>
                 </div>
               )}
             </div>
           </div>
-        </CardContent>
-      </Card>
+        </div>
+      </div>
     );
   };
 

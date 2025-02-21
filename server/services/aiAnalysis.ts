@@ -139,18 +139,55 @@ Response Format (use exact structure):
 
   private async processAnalysis(symbol: string, timeframe: string, balance: number, positions: Trade[]): Promise<AnalysisResult> {
     try {
-      // Process the analysis and return the result
-      // This is a placeholder for the actual AI analysis logic
-      return {
-        confidence: 85,
-        recommendation: {
-          action: "hold",
-          entry_price: 0,
-          stop_loss: 0,
-          take_profit: 0,
-          risk_percentage: 0.01,
+      // Get the model
+      const model = this.genAI.getGenerativeModel({ model: "gemini-1.5-flash-001" });
+
+      // Generate the chart image
+      const chartData = await getHistoricalBars(symbol, timeframe);
+      const chartImage = await generateAnalysisChart(chartData, symbol);
+
+      // Create the prompt
+      const prompt = this.createAnalysisPrompt(symbol, timeframe, balance, positions);
+
+      // Convert chart image to base64
+      const base64Image = chartImage.toString("base64");
+
+      // Create the image part for the model
+      const imagePart = {
+        inlineData: {
+          data: base64Image,
+          mimeType: "image/png",
         },
       };
+
+      // Create the content parts
+      const parts = [{ text: prompt }, imagePart];
+
+      // Send request to the model
+      const result = await model.generateContent(parts, {});
+
+      // Wait for the response to be ready
+      await result.response;
+
+      // Get the text from the response
+      const text = result.response.text();
+      console.log("[AI] Raw response:", text);
+
+      // Parse the JSON response
+      let analysisResult: AnalysisResult;
+      try {
+        analysisResult = JSON.parse(text);
+      } catch (error) {
+        console.error("[AI] Error parsing analysis response:", error);
+        throw new Error("Failed to parse AI analysis response");
+      }
+
+      // Validate the analysis result
+      if (!this.validateAnalysis(analysisResult, balance)) {
+        throw new Error("Invalid analysis result from AI model");
+      }
+
+      return analysisResult;
     } catch (error) {
       console.error(`[AI] Error processing analysis for ${symbol}:`, error);
       throw error;
@@ -160,13 +197,18 @@ Response Format (use exact structure):
   private validateAnalysis(analysis: AnalysisResult, accountBalance: number): boolean {
     // Basic structure validation
     if (!analysis.trend || !analysis.confidence || !analysis.recommendation) {
-      console.error("[AI] Missing required fields in analysis");
+      console.error("[AI] Missing required fields in analysis:", {
+        hasTrend: !!analysis.trend,
+        hasConfidence: !!analysis.confidence,
+        hasRecommendation: !!analysis.recommendation,
+        analysis: JSON.stringify(analysis, null, 2),
+      });
       return false;
     }
 
     // Confidence score validation
     if (analysis.confidence < 0 || analysis.confidence > 100) {
-      console.error("[AI] Invalid confidence score");
+      console.error("[AI] Invalid confidence score:", analysis.confidence);
       return false;
     }
 
@@ -177,20 +219,18 @@ Response Format (use exact structure):
         console.error(`[AI] Confidence score ${analysis.confidence} below minimum required ${minConfidence}`);
         return false;
       }
-    }
 
-    // Validate risk percentage
-    if (analysis.recommendation.risk_percentage) {
-      if (analysis.recommendation.risk_percentage < 0.5 || analysis.recommendation.risk_percentage > 2.0) {
-        console.error("[AI] Invalid risk percentage");
+      // Only validate price levels for non-hold actions
+      if (!this.validatePriceLevels(analysis, accountBalance)) {
+        console.error("[AI] Invalid price levels for action:", analysis.recommendation.action);
         return false;
       }
     }
 
-    // Validate price levels
-    if (analysis.recommendation.action !== "hold") {
-      if (!this.validatePriceLevels(analysis, accountBalance)) {
-        console.error("[AI] Invalid price levels");
+    // Validate risk percentage if present
+    if (analysis.recommendation.risk_percentage !== undefined) {
+      if (analysis.recommendation.risk_percentage < 0.5 || analysis.recommendation.risk_percentage > 2.0) {
+        console.error("[AI] Invalid risk percentage:", analysis.recommendation.risk_percentage);
         return false;
       }
     }
@@ -217,6 +257,7 @@ Response Format (use exact structure):
     const { entry_price, stop_loss, take_profit } = analysis.recommendation;
 
     if (!entry_price || !stop_loss || !take_profit) {
+      console.error("[AI] Missing price levels:", { entry_price, stop_loss, take_profit });
       return false;
     }
 
