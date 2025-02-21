@@ -1,4 +1,5 @@
-import Alpaca from "@alpacahq/alpaca-trade-api";
+// @ts-ignore
+import AlpacaApi from "@alpacahq/alpaca-trade-api";
 import WebSocket from "ws";
 
 // Check if environment variables are set
@@ -33,36 +34,60 @@ interface AlpacaPosition {
   current_price: string | number;
 }
 
-// Initialize Alpaca client
-const alpaca = new Alpaca({
+// @ts-ignore
+const alpaca = new AlpacaApi({
   keyId: process.env.APCA_API_KEY_ID,
   secretKey: process.env.APCA_API_SECRET_KEY,
   paper: true,
   feed: "iex",
   baseUrl: "https://paper-api.alpaca.markets",
+  apiVersion: "v2",
 });
 
 // Function to get historical bars
-async function getHistoricalBars(symbol: string, timeframe = "4Hour", limit = 100) {
+async function getHistoricalBars(symbol: string, timeframe = "4Hour", limit = 100, startDate?: Date, endDate?: Date) {
   try {
-    console.log(`[Alpaca] Fetching last ${limit} ${timeframe} bars for ${symbol}...`);
+    console.log(`[Alpaca] Fetching ${timeframe} bars for ${symbol}...`);
 
-    // Calculate start date based on timeframe to ensure we get enough bars
-    const end = new Date();
-    const start = new Date();
-    const daysToFetch = timeframe === "4Hour" ? 30 : 5; // Fetch more days for 4-hour charts
-    start.setDate(start.getDate() - daysToFetch);
+    // Calculate default dates if not provided
+    const now = new Date();
+    let end = endDate ? new Date(endDate) : now;
+    let start = startDate ? new Date(startDate) : new Date(end);
 
-    console.log(`[Alpaca] Date range: ${start.toISOString()} to ${end.toISOString()}`);
+    // If dates are in the future, adjust them to current time
+    if (end > now) {
+      console.log("[Alpaca] Warning: End date is in the future. Using current time.");
+      end = now;
+    }
+
+    // For backtesting, we need at least 60 bars
+    // Calculate minimum start date based on timeframe
+    const minBarsNeeded = 60;
+    const hoursPerBar = timeframe === "4Hour" ? 4 : 1;
+    const minHoursNeeded = minBarsNeeded * hoursPerBar;
+    const minDaysNeeded = Math.ceil(minHoursNeeded / 6.5); // 6.5 trading hours per day
+
+    // If start date is not provided or too recent, adjust it
+    if (!startDate || start > end) {
+      start = new Date(end);
+      start.setDate(start.getDate() - (minDaysNeeded + 5)); // Add extra days for safety
+    }
+
+    // Ensure we have enough historical data
+    const daysDiff = Math.ceil((end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24));
+    if (daysDiff < minDaysNeeded) {
+      start.setDate(start.getDate() - (minDaysNeeded - daysDiff + 5)); // Add extra days for safety
+    }
+
+    console.log(`[Alpaca] Requesting bars from ${start.toISOString()} to ${end.toISOString()}`);
     console.log(`[Alpaca] API Key: ${process.env.APCA_API_KEY_ID?.slice(0, 5)}...`);
-    console.log(`[Alpaca] Using feed: iex`);
 
     const resp = await alpaca.getBarsV2(symbol, {
       start: start.toISOString(),
       end: end.toISOString(),
       timeframe: timeframe,
       feed: "iex",
-      limit: limit,
+      adjustment: "all", // Include all adjustments
     });
 
     console.log(`[Alpaca] Got response from getBarsV2`);
@@ -80,37 +105,34 @@ async function getHistoricalBars(symbol: string, timeframe = "4Hour", limit = 10
       });
     }
 
-    // Get the last 100 bars if we have more
-    const lastBars = bars.slice(-limit);
+    // Log detailed bar information
+    console.log(`[Alpaca] Retrieved ${bars.length} bars`);
+    if (bars.length > 0) {
+      console.log(`[Alpaca] First bar: ${JSON.stringify(bars[0], null, 2)}`);
+      console.log(`[Alpaca] Last bar: ${JSON.stringify(bars[bars.length - 1], null, 2)}`);
 
-    console.log(`[Alpaca] Retrieved ${lastBars.length} bars`);
-    if (lastBars.length > 0) {
-      console.log("[Alpaca] First bar:", JSON.stringify(lastBars[0], null, 2));
-      console.log("[Alpaca] Last bar:", JSON.stringify(lastBars[lastBars.length - 1], null, 2));
+      // Log time gaps
+      for (let i = 1; i < bars.length; i++) {
+        const timeDiff = new Date(bars[i].timestamp).getTime() - new Date(bars[i - 1].timestamp).getTime();
+        const hoursDiff = timeDiff / (1000 * 60 * 60);
+        if (hoursDiff > 4) {
+          console.log(`[Alpaca] Time gap detected between bars ${i - 1} and ${i}: ${hoursDiff} hours`);
+        }
+      }
     } else {
       console.log("[Alpaca] No bars retrieved");
+      console.log("[Alpaca] This might be due to:");
+      console.log("- Market being closed during the requested period");
+      console.log("- Future dates with no data");
+      console.log("- No trading activity in the specified timeframe");
+      throw new Error("No historical data available for the specified period");
     }
 
-    // Validate data format
-    if (!Array.isArray(lastBars)) {
-      throw new Error("Invalid data format: bars is not an array");
+    if (bars.length < minBarsNeeded) {
+      throw new Error(`Insufficient historical data. Retrieved ${bars.length} bars but need at least ${minBarsNeeded} bars for accurate backtesting.`);
     }
 
-    for (const bar of lastBars) {
-      if (
-        !bar.timestamp ||
-        typeof bar.open !== "number" ||
-        typeof bar.high !== "number" ||
-        typeof bar.low !== "number" ||
-        typeof bar.close !== "number" ||
-        typeof bar.volume !== "number"
-      ) {
-        console.error("[Alpaca] Invalid bar format:", bar);
-        throw new Error("Invalid bar format: missing required fields or invalid types");
-      }
-    }
-
-    return lastBars;
+    return bars;
   } catch (error) {
     console.error("[Alpaca] Error fetching bars:", error);
     throw error;

@@ -1,14 +1,14 @@
-import { sqliteTable, text, integer } from "drizzle-orm/sqlite-core";
+import { pgTable, text, integer, timestamp } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
 
-export const trades = sqliteTable("trades", {
-  id: integer("id").primaryKey({ autoIncrement: true }),
+export const trades = pgTable("trades", {
+  id: integer("id").primaryKey(),
   symbol: text("symbol").notNull(),
   side: text("side").notNull(),
   quantity: integer("quantity").notNull(),
   price: integer("price").notNull(),
-  timestamp: integer("timestamp").notNull(),
+  timestamp: timestamp("timestamp").notNull().defaultNow(),
   status: text("status").notNull(),
   analysis: text("analysis"),
 });

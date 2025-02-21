@@ -1,4 +1,4 @@
-import express, { Express } from "express";
+import express, { Express, Request, Response } from "express";
 import { Server } from "http";
 import { WebSocketServer, WebSocket } from "ws";
 import * as alpaca from "./services/alpaca";
@@ -6,8 +6,18 @@ import { generateCandlestickChart, generateVolumeChart } from "./services/chart"
 import { generateAnalysisChart } from "./services/chartAnalysis";
 import { aiAnalysis } from "./services/aiAnalysis";
 import { getHistoricalBars } from "./services/alpaca";
+import { backtesting } from "./services/backtesting";
 
 const router = express.Router();
+
+interface BacktestRequest {
+  symbol: string;
+  timeframe: string;
+  startDate: string;
+  endDate: string;
+  initialBalance: number;
+  riskPerTrade: number;
+}
 
 export async function registerRoutes(app: Express): Promise<Server> {
   const httpServer = app.listen(5000, () => {
@@ -270,13 +280,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const chartImage = await generateAnalysisChart(bars, req.params.symbol);
 
       // Analyze chart with AI
-      const analysis = await aiAnalysis.analyzeChart(chartImage, req.params.symbol, timeframe);
-
-      // Validate analysis
-      const isValid = await aiAnalysis.validateAnalysis(analysis);
-      if (!isValid) {
-        throw new Error("Invalid analysis result");
-      }
+      const analysis = await aiAnalysis.analyzeChart(req.params.symbol, timeframe, 100000, []);
 
       // Return analysis result
       res.json({
@@ -290,6 +294,57 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.status(500).json({
         error: "Failed to analyze chart",
         details: error instanceof Error ? error.message : "Unknown error",
+      });
+    }
+  });
+
+  // Backtesting endpoint
+  app.post("/api/backtest", async (req: Request<{}, {}, BacktestRequest>, res: Response) => {
+    try {
+      console.log("[Backtest] Received request:", req.body);
+
+      const { symbol, timeframe, startDate, endDate, initialBalance, riskPerTrade } = req.body;
+
+      // Validate required parameters
+      if (!symbol || !timeframe || !startDate || !endDate || !initialBalance || !riskPerTrade) {
+        return res.status(400).json({
+          error: "Missing required parameters",
+          required: ["symbol", "timeframe", "startDate", "endDate", "initialBalance", "riskPerTrade"],
+          received: req.body,
+        });
+      }
+
+      // Parse dates
+      const start = new Date(startDate);
+      const end = new Date(endDate);
+
+      if (isNaN(start.getTime()) || isNaN(end.getTime())) {
+        return res.status(400).json({
+          error: "Invalid date format",
+          startDate,
+          endDate,
+        });
+      }
+
+      if (start >= end) {
+        return res.status(400).json({
+          error: "Start date must be before end date",
+          startDate,
+          endDate,
+        });
+      }
+
+      // Run backtest
+      console.log(`[Backtest] Running backtest for ${symbol} from ${startDate} to ${endDate}`);
+      const result = await backtesting.runBacktest(symbol, timeframe, start, end, initialBalance, riskPerTrade);
+
+      console.log(`[Backtest] Completed with ${result.total_trades} trades`);
+      res.json(result);
+    } catch (error) {
+      console.error("[Backtest] Error:", error);
+      res.status(500).json({
+        error: "Backtest failed",
+        message: error instanceof Error ? error.message : "Unknown error",
       });
     }
   });

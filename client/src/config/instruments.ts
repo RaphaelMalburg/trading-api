@@ -1,44 +1,28 @@
-export interface Instrument {
+interface Instrument {
   symbol: string;
   name: string;
+  type: "stock";
 }
 
-export interface InstrumentCategory {
+interface InstrumentCategory {
   name: string;
-  description: string;
   instruments: Instrument[];
 }
 
 export const instrumentCategories: InstrumentCategory[] = [
   {
-    name: "Tech & Growth Stocks",
-    description: "High Momentum Technology Stocks",
+    name: "US Stocks",
     instruments: [
-      { symbol: "AAPL", name: "Apple" },
-      { symbol: "MSFT", name: "Microsoft" },
-      { symbol: "NVDA", name: "Nvidia" },
-      { symbol: "TSLA", name: "Tesla" },
-      { symbol: "AMD", name: "AMD" },
-    ],
-  },
-  {
-    name: "ETFs",
-    description: "Diversified Trend Following",
-    instruments: [
-      { symbol: "SPY", name: "S&P 500" },
-      { symbol: "QQQ", name: "Nasdaq 100" },
-      { symbol: "XLF", name: "Financials" },
-      { symbol: "XLE", name: "Energy" },
-    ],
-  },
-  {
-    name: "High Volatility",
-    description: "High Volatility Tech Stocks",
-    instruments: [
-      { symbol: "AMZN", name: "Amazon" },
-      { symbol: "GOOGL", name: "Google" },
-      { symbol: "NFLX", name: "Netflix" },
-      { symbol: "META", name: "Meta" },
+      { symbol: "AAPL", name: "Apple Inc.", type: "stock" },
+      { symbol: "MSFT", name: "Microsoft Corporation", type: "stock" },
+      { symbol: "GOOGL", name: "Alphabet Inc.", type: "stock" },
+      { symbol: "AMZN", name: "Amazon.com Inc.", type: "stock" },
+      { symbol: "META", name: "Meta Platforms Inc.", type: "stock" },
+      { symbol: "TSLA", name: "Tesla Inc.", type: "stock" },
+      { symbol: "NVDA", name: "NVIDIA Corporation", type: "stock" },
+      { symbol: "JPM", name: "JPMorgan Chase & Co.", type: "stock" },
+      { symbol: "V", name: "Visa Inc.", type: "stock" },
+      { symbol: "WMT", name: "Walmart Inc.", type: "stock" },
     ],
   },
 ];
