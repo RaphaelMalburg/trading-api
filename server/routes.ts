@@ -1,12 +1,13 @@
 import express, { Express, Request, Response } from "express";
 import { Server } from "http";
 import { WebSocketServer, WebSocket } from "ws";
-import * as alpaca from "./services/alpaca";
-import { generateCandlestickChart, generateVolumeChart } from "./services/chart";
-import { generateAnalysisChart } from "./services/chartAnalysis";
-import { aiAnalysis } from "./services/aiAnalysis";
-import { getHistoricalBars } from "./services/alpaca";
-import { backtesting } from "./services/backtesting";
+import * as alpaca from "./services/alpaca.js";
+import { generateCandlestickChart, generateVolumeChart } from "./services/chart.js";
+import { generateAnalysisChart } from "./services/chartAnalysis.js";
+import { aiAnalysis } from "./services/aiAnalysis.js";
+import { getHistoricalBars } from "./services/alpaca.js";
+import { backtesting } from "./services/backtesting.js";
+import { database } from "./services/database.js";
 
 const router = express.Router();
 
@@ -346,6 +347,44 @@ export async function registerRoutes(app: Express): Promise<Server> {
         error: "Backtest failed",
         message: error instanceof Error ? error.message : "Unknown error",
       });
+    }
+  });
+
+  // Backtest endpoints
+  app.get("/api/backtests", async (req, res) => {
+    try {
+      const backtests = await database.getAllBacktests();
+      res.json(backtests);
+    } catch (error) {
+      console.error("[API] Error fetching backtests:", error);
+      res.status(500).json({ error: "Failed to fetch backtests" });
+    }
+  });
+
+  app.get("/api/backtests/:id", async (req, res) => {
+    try {
+      const backtest = await database.getBacktestById(Number(req.params.id));
+      if (!backtest) {
+        res.status(404).json({ error: "Backtest not found" });
+        return;
+      }
+      res.json(backtest);
+    } catch (error) {
+      console.error("[API] Error fetching backtest:", error);
+      res.status(500).json({ error: "Failed to fetch backtest" });
+    }
+  });
+
+  app.post("/api/backtest", async (req, res) => {
+    try {
+      const { symbol, timeframe, startDate, endDate, initialBalance, riskPerTrade } = req.body;
+
+      const result = await backtesting.runBacktest(symbol, timeframe, new Date(startDate), new Date(endDate), Number(initialBalance), Number(riskPerTrade));
+
+      res.json(result);
+    } catch (error) {
+      console.error("[API] Error running backtest:", error);
+      res.status(500).json({ error: "Failed to run backtest" });
     }
   });
 

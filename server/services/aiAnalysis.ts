@@ -2,52 +2,7 @@ import { GoogleGenerativeAI } from "@google/generative-ai";
 import { Buffer } from "buffer";
 import { generateAnalysisChart } from "./chartAnalysis.js";
 import { getHistoricalBars } from "./alpaca.js";
-
-interface Position {
-  symbol: string;
-  side: "long" | "short";
-  entry_price: number;
-  stop_loss: number;
-  take_profit: number;
-  size: number;
-  entry_time: Date;
-  exit_time?: Date;
-  exit_price?: number;
-  pnl?: number;
-  pnl_percentage?: number;
-  reason?: string;
-}
-
-interface AnalysisResult {
-  trend: "bullish" | "bearish" | "neutral";
-  confidence: number;
-  key_levels: {
-    support: number[];
-    resistance: number[];
-  };
-  signals: {
-    ema_pullback: boolean;
-    mean_reversion: boolean;
-    breakout: boolean;
-  };
-  recommendation: {
-    action: "buy" | "sell" | "hold";
-    entry_price?: number;
-    stop_loss?: number;
-    take_profit?: number;
-    timeframe: string;
-    reasoning: string;
-    risk_percentage?: number;
-  };
-  patterns: {
-    name: string;
-    confidence: number;
-    location: {
-      start_index: number;
-      end_index: number;
-    };
-  }[];
-}
+import type { Trade, AnalysisResult } from "../types/trading.js";
 
 class AIAnalysisService {
   private genAI: GoogleGenerativeAI;
@@ -70,7 +25,7 @@ class AIAnalysisService {
     return AIAnalysisService.instance;
   }
 
-  private createAnalysisPrompt(symbol: string, timeframe: string, accountBalance: number, openPositions: any[]): string {
+  private createAnalysisPrompt(symbol: string, timeframe: string, accountBalance: number, openPositions: Trade[]): string {
     return `You are a trading analysis AI. Your task is to analyze the provided chart and respond with a JSON object.
 
 IMPORTANT: Your response must be a valid JSON object only. Do not include any explanatory text, markdown formatting, or backticks.
@@ -148,7 +103,7 @@ Response Format (use exact structure):
     }
   }
 
-  public async analyzeChart(symbol: string, timeframe: string, balance: number, positions: Position[]): Promise<any> {
+  public async analyzeChart(symbol: string, timeframe: string, balance: number, positions: Trade[]): Promise<AnalysisResult> {
     try {
       const response = await this.makeRequest(symbol, timeframe, balance, positions);
       return response;
@@ -158,7 +113,7 @@ Response Format (use exact structure):
     }
   }
 
-  private async makeRequest(symbol: string, timeframe: string, balance: number, positions: Position[], retries = 3): Promise<any> {
+  private async makeRequest(symbol: string, timeframe: string, balance: number, positions: Trade[], retries = 3): Promise<AnalysisResult> {
     try {
       const response = await this.sendRequest(symbol, timeframe, balance, positions);
       return response;
@@ -172,7 +127,7 @@ Response Format (use exact structure):
     }
   }
 
-  private async sendRequest(symbol: string, timeframe: string, balance: number, positions: Position[]): Promise<any> {
+  private async sendRequest(symbol: string, timeframe: string, balance: number, positions: Trade[]): Promise<AnalysisResult> {
     try {
       const response = await this.processAnalysis(symbol, timeframe, balance, positions);
       return response;
@@ -182,7 +137,7 @@ Response Format (use exact structure):
     }
   }
 
-  private async processAnalysis(symbol: string, timeframe: string, balance: number, positions: Position[]): Promise<any> {
+  private async processAnalysis(symbol: string, timeframe: string, balance: number, positions: Trade[]): Promise<AnalysisResult> {
     try {
       // Process the analysis and return the result
       // This is a placeholder for the actual AI analysis logic
@@ -250,7 +205,7 @@ Response Format (use exact structure):
     }
 
     // Mean reversion trades
-    if (analysis.signals.mean_reversion) {
+    if (analysis.signals?.mean_reversion) {
       return 80;
     }
 

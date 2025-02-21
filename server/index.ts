@@ -1,7 +1,10 @@
 import express from "express";
 import cors from "cors";
-import { registerRoutes } from "./routes";
-import { DatabaseService } from "./services/database";
+import { registerRoutes } from "./routes.js";
+import { DatabaseService } from "./services/database.js";
+import dotenv from "dotenv";
+
+dotenv.config();
 
 const app = express();
 const PORT = 5000;

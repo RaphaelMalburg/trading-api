@@ -1,46 +1,8 @@
 import { aiAnalysis } from "./aiAnalysis.js";
 import { getHistoricalBars } from "./alpaca.js";
 import { generateAnalysisChart } from "./chartAnalysis.js";
-
-interface Position {
-  symbol: string;
-  side: "long" | "short";
-  entry_price: number;
-  stop_loss: number;
-  take_profit: number;
-  size: number;
-  entry_time: Date;
-  exit_time?: Date;
-  exit_price?: number;
-  pnl?: number;
-  pnl_percentage?: number;
-  reason?: string;
-}
-
-interface BacktestResult {
-  symbol: string;
-  timeframe: string;
-  start_date: string;
-  end_date: string;
-  initial_balance: number;
-  final_balance: number;
-  total_trades: number;
-  winning_trades: number;
-  losing_trades: number;
-  win_rate: number;
-  average_win: number;
-  average_loss: number;
-  profit_factor: number;
-  max_drawdown: number;
-  max_drawdown_percentage: number;
-  trades: Position[];
-  equity_curve: { timestamp: string; balance: number }[];
-  analysis_history: {
-    timestamp: string;
-    chart_image: string; // base64 encoded image
-    analysis_result: any;
-  }[];
-}
+import { database } from "./database.js";
+import type { BacktestResult, Trade } from "../types/trading.js";
 
 class BacktestingService {
   private static instance: BacktestingService;
@@ -78,7 +40,7 @@ class BacktestingService {
         throw new Error(`Insufficient historical data. Need at least 60 bars, but got ${bars.length}. This could be due to market holidays or limited market hours.`);
       }
 
-      const positions: Position[] = [];
+      const positions: Trade[] = [];
       const equityCurve: { timestamp: string; balance: number }[] = [{ timestamp: bars[0].timestamp, balance: initialBalance }];
       let balance = initialBalance;
       const analysisHistory: { timestamp: string; chart_image: string; analysis_result: any }[] = [];
@@ -126,14 +88,6 @@ class BacktestingService {
       // Calculate final statistics
       const stats = this.calculateStatistics(positions, initialBalance, balance, equityCurve);
 
-      console.log(`[Backtest] Completed backtest for ${symbol}:`, {
-        total_trades: positions.length,
-        win_rate: stats.win_rate,
-        profit_factor: stats.profit_factor,
-        final_balance: balance,
-        analysis_count: analysisHistory.length,
-      });
-
       const result: BacktestResult = {
         symbol,
         timeframe,
@@ -155,14 +109,39 @@ class BacktestingService {
         analysis_history: analysisHistory,
       };
 
-      return result;
+      try {
+        // Store results in database
+        const backtest = await database.createBacktest(result);
+
+        // Only try to add trades if there are any
+        if (positions.length > 0) {
+          await database.addBacktestTrades(backtest.id, result.trades);
+        }
+
+        // Add analysis and equity curve data
+        await database.addBacktestAnalysis(backtest.id, result.analysis_history);
+        await database.addBacktestEquityCurve(backtest.id, result.equity_curve);
+
+        console.log(`[Backtest] Completed backtest for ${symbol}:`, {
+          total_trades: positions.length,
+          win_rate: stats.win_rate,
+          profit_factor: stats.profit_factor,
+          final_balance: balance,
+          analysis_count: analysisHistory.length,
+        });
+
+        return result;
+      } catch (error) {
+        console.error("[Backtest] Error saving results to database:", error);
+        throw new Error("Failed to save backtest results to database");
+      }
     } catch (error) {
       console.error(`[Backtest] Error running backtest:`, error);
       throw error;
     }
   }
 
-  private async updateOpenPositions(positions: Position[], currentBar: any, balance: number): Promise<void> {
+  private async updateOpenPositions(positions: Trade[], currentBar: any, balance: number): Promise<void> {
     for (const position of positions) {
       // Check stop loss
       if (position.side === "long" && currentBar.low <= position.stop_loss) {
@@ -183,7 +162,7 @@ class BacktestingService {
     positions.splice(0, positions.length, ...positions.filter((p) => !p.exit_time));
   }
 
-  private async executePosition(symbol: string, analysis: any, currentBar: any, balance: number, riskPerTrade: number): Promise<Position | null> {
+  private async executePosition(symbol: string, analysis: any, currentBar: any, balance: number, riskPerTrade: number): Promise<Trade | null> {
     const { action, entry_price, stop_loss, take_profit, risk_percentage } = analysis.recommendation;
 
     if (!entry_price || !stop_loss || !take_profit) {
@@ -201,13 +180,13 @@ class BacktestingService {
       stop_loss,
       take_profit,
       size: positionSize,
-      entry_time: new Date(currentBar.timestamp),
+      entry_time: currentBar.timestamp,
     };
   }
 
-  private async closePosition(position: Position, exitPrice: number, exitTime: string, reason: string, balance: number): Promise<void> {
+  private async closePosition(position: Trade, exitPrice: number, exitTime: string, reason: string, balance: number): Promise<void> {
     position.exit_price = exitPrice;
-    position.exit_time = new Date(exitTime);
+    position.exit_time = exitTime;
     position.reason = reason;
 
     // Calculate P&L
@@ -217,11 +196,11 @@ class BacktestingService {
     position.pnl_percentage = (pnl / balance) * 100;
   }
 
-  private calculateCurrentBalance(balance: number, positions: Position[]): number {
+  private calculateCurrentBalance(balance: number, positions: Trade[]): number {
     return positions.reduce((acc, pos) => acc + (pos.pnl || 0), balance);
   }
 
-  private calculateStatistics(positions: Position[], initialBalance: number, finalBalance: number, equityCurve: { timestamp: string; balance: number }[]): any {
+  private calculateStatistics(positions: Trade[], initialBalance: number, finalBalance: number, equityCurve: { timestamp: string; balance: number }[]): any {
     const closedPositions = positions.filter((p) => p.exit_price !== undefined);
     const winningTrades = closedPositions.filter((p) => (p.pnl || 0) > 0);
     const losingTrades = closedPositions.filter((p) => (p.pnl || 0) <= 0);
@@ -261,7 +240,7 @@ class BacktestingService {
     };
   }
 
-  private closeAllPositions(positions: Position[], lastBar: any): void {
+  private closeAllPositions(positions: Trade[], lastBar: any): void {
     positions.forEach((position) => {
       if (!position.exit_time) {
         this.closePosition(position, lastBar.close, lastBar.timestamp, "end_of_backtest", 0);
