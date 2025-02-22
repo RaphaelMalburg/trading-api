@@ -1,0 +1,407 @@
+{
+  "id": "3cd9e576-fa22-41a5-a93c-1ffa1a080263",
+  "prevId": "7d59ed06-d87b-4461-8292-8e0c224636ae",
+  "version": "7",
+  "dialect": "postgresql",
+  "tables": {
+    "public.backtest_analysis": {
+      "name": "backtest_analysis",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "serial",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "backtest_id": {
+          "name": "backtest_id",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false,
+          "default": 0
+        },
+        "timestamp": {
+          "name": "timestamp",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "chart_image": {
+          "name": "chart_image",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "trend": {
+          "name": "trend",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "confidence": {
+          "name": "confidence",
+          "type": "real",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "action": {
+          "name": "action",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "entry_price": {
+          "name": "entry_price",
+          "type": "real",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "stop_loss": {
+          "name": "stop_loss",
+          "type": "real",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "take_profit": {
+          "name": "take_profit",
+          "type": "real",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "reasoning": {
+          "name": "reasoning",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "risk_percentage": {
+          "name": "risk_percentage",
+          "type": "real",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "support_levels": {
+          "name": "support_levels",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "resistance_levels": {
+          "name": "resistance_levels",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "patterns": {
+          "name": "patterns",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "signals": {
+          "name": "signals",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.backtest_equity_curve": {
+      "name": "backtest_equity_curve",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "serial",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "backtest_id": {
+          "name": "backtest_id",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "timestamp": {
+          "name": "timestamp",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "balance": {
+          "name": "balance",
+          "type": "real",
+          "primaryKey": false,
+          "notNull": true
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "backtest_equity_curve_backtest_id_backtests_id_fk": {
+          "name": "backtest_equity_curve_backtest_id_backtests_id_fk",
+          "tableFrom": "backtest_equity_curve",
+          "tableTo": "backtests",
+          "columnsFrom": [
+            "backtest_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.backtest_trades": {
+      "name": "backtest_trades",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "serial",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "backtest_id": {
+          "name": "backtest_id",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "symbol": {
+          "name": "symbol",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "side": {
+          "name": "side",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "entry_price": {
+          "name": "entry_price",
+          "type": "real",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "stop_loss": {
+          "name": "stop_loss",
+          "type": "real",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "take_profit": {
+          "name": "take_profit",
+          "type": "real",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "size": {
+          "name": "size",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "entry_time": {
+          "name": "entry_time",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "exit_time": {
+          "name": "exit_time",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "exit_price": {
+          "name": "exit_price",
+          "type": "real",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "pnl": {
+          "name": "pnl",
+          "type": "real",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "pnl_percentage": {
+          "name": "pnl_percentage",
+          "type": "real",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "reason": {
+          "name": "reason",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "backtest_trades_backtest_id_backtests_id_fk": {
+          "name": "backtest_trades_backtest_id_backtests_id_fk",
+          "tableFrom": "backtest_trades",
+          "tableTo": "backtests",
+          "columnsFrom": [
+            "backtest_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.backtests": {
+      "name": "backtests",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "serial",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "symbol": {
+          "name": "symbol",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "timeframe": {
+          "name": "timeframe",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "start_date": {
+          "name": "start_date",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "end_date": {
+          "name": "end_date",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "initial_balance": {
+          "name": "initial_balance",
+          "type": "real",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "final_balance": {
+          "name": "final_balance",
+          "type": "real",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "total_trades": {
+          "name": "total_trades",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "winning_trades": {
+          "name": "winning_trades",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "losing_trades": {
+          "name": "losing_trades",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "win_rate": {
+          "name": "win_rate",
+          "type": "real",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "average_win": {
+          "name": "average_win",
+          "type": "real",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "average_loss": {
+          "name": "average_loss",
+          "type": "real",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "profit_factor": {
+          "name": "profit_factor",
+          "type": "real",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "max_drawdown": {
+          "name": "max_drawdown",
+          "type": "real",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "max_drawdown_percentage": {
+          "name": "max_drawdown_percentage",
+          "type": "real",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": false,
+          "default": "now()"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    }
+  },
+  "enums": {},
+  "schemas": {},
+  "sequences": {},
+  "roles": {},
+  "policies": {},
+  "views": {},
+  "_meta": {
+    "columns": {},
+    "schemas": {},
+    "tables": {}
+  }
+}

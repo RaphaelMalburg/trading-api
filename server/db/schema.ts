@@ -43,9 +43,10 @@ export const backtestAnalysis = pgTable("backtest_analysis", {
   id: serial("id").primaryKey(),
   backtestId: integer("backtest_id")
     .references(() => backtests.id, { onDelete: "cascade" })
-    .notNull(),
+    .notNull()
+    .default(0), // Default to 0 for standalone analysis
   timestamp: timestamp("timestamp").notNull(),
-  chartImage: text("chart_image").notNull(),
+  chart_image: text("chart_image").notNull(),
   trend: text("trend"),
   confidence: real("confidence"),
   action: text("action"),
@@ -54,10 +55,10 @@ export const backtestAnalysis = pgTable("backtest_analysis", {
   takeProfit: real("take_profit"),
   reasoning: text("reasoning"),
   riskPercentage: real("risk_percentage"),
-  supportLevels: text("support_levels"), // Store as JSON string
-  resistanceLevels: text("resistance_levels"), // Store as JSON string
-  patterns: text("patterns"), // Store as JSON string
-  signals: text("signals"), // Store as JSON string
+  supportLevels: text("support_levels"),
+  resistanceLevels: text("resistance_levels"),
+  patterns: text("patterns"),
+  signals: text("signals"),
 });
 
 export const backtestEquityCurve = pgTable("backtest_equity_curve", {

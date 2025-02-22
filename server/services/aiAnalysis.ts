@@ -2,6 +2,7 @@ import { GoogleGenerativeAI } from "@google/generative-ai";
 import { Buffer } from "buffer";
 import { generateAnalysisChart } from "./chartAnalysis.js";
 import { getHistoricalBars } from "./alpaca.js";
+import { database } from "./database.js";
 import type { Trade, AnalysisResult } from "../types/trading.js";
 
 class AIAnalysisService {
@@ -187,6 +188,20 @@ Response Format (use exact structure):
         throw new Error("Invalid analysis result from AI model");
       }
 
+      // Store the analysis result
+      try {
+        await database.addBacktestAnalysis(0, [
+          {
+            timestamp: new Date().toISOString(),
+            chart_image: base64Image,
+            analysis_result: analysisResult,
+          },
+        ]);
+      } catch (error) {
+        console.error("[AI] Error storing analysis result:", error);
+        // Don't throw here, we still want to return the analysis even if storage fails
+      }
+
       return analysisResult;
     } catch (error) {
       console.error(`[AI] Error processing analysis for ${symbol}:`, error);
@@ -212,27 +227,28 @@ Response Format (use exact structure):
       return false;
     }
 
-    // Validate confidence thresholds
-    if (analysis.recommendation.action !== "hold") {
-      const minConfidence = this.getMinimumConfidence(analysis);
-      if (analysis.confidence < minConfidence) {
-        console.error(`[AI] Confidence score ${analysis.confidence} below minimum required ${minConfidence}`);
-        return false;
-      }
-
-      // Only validate price levels for non-hold actions
-      if (!this.validatePriceLevels(analysis, accountBalance)) {
-        console.error("[AI] Invalid price levels for action:", analysis.recommendation.action);
-        return false;
-      }
+    // For "hold" recommendations, we don't need to validate price levels or risk percentage
+    if (analysis.recommendation.action === "hold") {
+      return true;
     }
 
-    // Validate risk percentage if present
-    if (analysis.recommendation.risk_percentage !== undefined) {
-      if (analysis.recommendation.risk_percentage < 0.5 || analysis.recommendation.risk_percentage > 2.0) {
-        console.error("[AI] Invalid risk percentage:", analysis.recommendation.risk_percentage);
-        return false;
-      }
+    // Validate confidence thresholds for trade actions
+    const minConfidence = this.getMinimumConfidence(analysis);
+    if (analysis.confidence < minConfidence) {
+      console.error(`[AI] Confidence score ${analysis.confidence} below minimum required ${minConfidence}`);
+      return false;
+    }
+
+    // Validate price levels for trade actions
+    if (!this.validatePriceLevels(analysis, accountBalance)) {
+      console.error("[AI] Invalid price levels for action:", analysis.recommendation.action);
+      return false;
+    }
+
+    // Validate risk percentage for trade actions
+    if (!analysis.recommendation.risk_percentage || analysis.recommendation.risk_percentage < 0.5 || analysis.recommendation.risk_percentage > 2.0) {
+      console.error("[AI] Invalid risk percentage:", analysis.recommendation.risk_percentage);
+      return false;
     }
 
     return true;

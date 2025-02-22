@@ -1,0 +1,2 @@
+ALTER TABLE "backtest_analysis" ALTER COLUMN "backtest_id" SET NOT NULL;--> statement-breakpoint
+ALTER TABLE "backtest_analysis" ADD CONSTRAINT "backtest_analysis_backtest_id_backtests_id_fk" FOREIGN KEY ("backtest_id") REFERENCES "public"."backtests"("id") ON DELETE cascade ON UPDATE no action;

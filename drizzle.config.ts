@@ -7,12 +7,20 @@ if (!process.env.DATABASE_URL) {
   throw new Error("DATABASE_URL is not defined in environment variables");
 }
 
+// Parse the connection string
+const url = new URL(process.env.DATABASE_URL);
+
 export default {
-  schema: "./shared/schema.ts",
+  schema: "./server/db/schema.ts",
   out: "./migrations",
-  driver: "pg",
+  dialect: "postgresql",
   dbCredentials: {
-    connectionString: process.env.DATABASE_URL,
+    host: url.hostname,
+    port: parseInt(url.port),
+    user: url.username,
+    password: url.password,
+    database: url.pathname.substring(1),
+    ssl: true,
   },
   verbose: true,
   strict: true,

@@ -388,6 +388,71 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Analysis endpoints
+  app.get("/api/analysis/history", async (req, res) => {
+    try {
+      console.log("[API] Fetching analysis history...");
+
+      // Disable compression for this endpoint
+      res.setHeader("Content-Encoding", "identity");
+
+      const analyses = await database.getAllAnalyses();
+
+      // Log the response size
+      const responseData = JSON.stringify(analyses);
+      console.log("[API] Response size:", {
+        length: responseData.length,
+        analysesCount: analyses.length,
+        firstAnalysisHasImage: analyses.length > 0 ? !!analyses[0].chart_image : false,
+      });
+
+      // Set correct content length and type
+      res.setHeader("Content-Length", Buffer.byteLength(responseData));
+      res.setHeader("Content-Type", "application/json");
+      res.setHeader("Cache-Control", "no-cache");
+
+      // Send the response
+      res.send(responseData);
+    } catch (error) {
+      console.error("[API] Error fetching analysis history:", error);
+      res.status(500).json({
+        error: "Failed to fetch analysis history",
+        details: error instanceof Error ? error.message : "Unknown error",
+      });
+    }
+  });
+
+  app.post("/api/analysis", async (req, res) => {
+    try {
+      console.log("[API] Storing analysis result...");
+      const analysis = req.body;
+
+      // Store the analysis in the database
+      const result = await database.addBacktestAnalysis(analysis.backtestId, [
+        {
+          timestamp: new Date().toISOString(),
+          chart_image: analysis.chartImage || "",
+          analysis_result: {
+            trend: analysis.trend,
+            confidence: analysis.confidence,
+            key_levels: analysis.key_levels,
+            signals: analysis.signals,
+            recommendation: analysis.recommendation,
+            patterns: analysis.patterns,
+          },
+        },
+      ]);
+
+      res.json(result);
+    } catch (error) {
+      console.error("[API] Error storing analysis:", error);
+      res.status(500).json({
+        error: "Failed to store analysis",
+        details: error instanceof Error ? error.message : "Unknown error",
+      });
+    }
+  });
+
   return httpServer;
 }
 
