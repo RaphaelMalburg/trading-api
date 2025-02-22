@@ -143,9 +143,36 @@ Response Format (use exact structure):
       // Get the model
       const model = this.genAI.getGenerativeModel({ model: "gemini-1.5-flash-001" });
 
-      // Generate the chart image
-      const chartData = await getHistoricalBars(symbol, timeframe);
+      // Generate the chart image with current timestamp
+      const now = new Date();
+      console.log("[AI] Generating chart for analysis:", {
+        symbol,
+        timeframe,
+        timestamp: now.toISOString(),
+      });
+
+      // Get the latest data for this specific analysis
+      const chartData = await getHistoricalBars(symbol, timeframe, 200);
+
+      // Log the data we're using for the chart
+      console.log("[AI] Using chart data:", {
+        dataPoints: chartData.length,
+        firstBar: chartData[0],
+        lastBar: chartData[chartData.length - 1],
+        currentTime: now.toISOString(),
+      });
+
+      // Generate a unique chart for this analysis
       const chartImage = await generateAnalysisChart(chartData, symbol);
+
+      // Log chart generation details
+      console.log("[AI] Chart generated:", {
+        symbol,
+        timeframe,
+        timestamp: now.toISOString(),
+        imageSize: chartImage.length,
+        imagePreview: chartImage.toString("base64").substring(0, 50) + "...",
+      });
 
       // Create the prompt
       const prompt = this.createAnalysisPrompt(symbol, timeframe, balance, positions);
@@ -188,11 +215,20 @@ Response Format (use exact structure):
         throw new Error("Invalid analysis result from AI model");
       }
 
-      // Store the analysis result
+      // Store the analysis result with the unique chart image
       try {
+        const timestamp = now.toISOString();
+        console.log("[AI] Storing analysis:", {
+          timestamp,
+          hasImage: !!base64Image,
+          imageLength: base64Image.length,
+          trend: analysisResult.trend,
+          action: analysisResult.recommendation?.action,
+        });
+
         await database.addBacktestAnalysis(0, [
           {
-            timestamp: new Date().toISOString(),
+            timestamp,
             chart_image: base64Image,
             analysis_result: analysisResult,
           },

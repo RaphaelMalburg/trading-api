@@ -18,6 +18,15 @@ interface Account {
   day_trade_count: number;
 }
 
+interface Bar {
+  timestamp: string;
+  open: number;
+  high: number;
+  low: number;
+  close: number;
+  volume: number;
+}
+
 interface Position {
   symbol: string;
   qty: number;
@@ -45,69 +54,70 @@ const alpaca = new AlpacaApi({
 });
 
 // Function to get historical bars
-async function getHistoricalBars(symbol: string, timeframe = "4Hour", limit = 100, startDate?: Date, endDate?: Date) {
+export async function getHistoricalBars(symbol: string, timeframe: string, limit: number = 200): Promise<Bar[]> {
   try {
-    // Calculate default dates if not provided
-    const now = new Date();
-    let end = endDate ? new Date(endDate) : now;
-    let start = startDate ? new Date(startDate) : new Date(end);
-
-    // If dates are in the future, adjust them to current time
-    if (end > now) {
-      end = now;
-    }
-
-    // For backtesting, we need at least 60 bars
-    // Calculate minimum start date based on timeframe
-    const minBarsNeeded = 60;
-    const hoursPerBar = timeframe === "4Hour" ? 4 : 1;
-    const minHoursNeeded = minBarsNeeded * hoursPerBar;
-    const minDaysNeeded = Math.ceil(minHoursNeeded / 6.5); // 6.5 trading hours per day
-
-    // If start date is not provided or too recent, adjust it
-    if (!startDate || start > end) {
-      start = new Date(end);
-      start.setDate(start.getDate() - (minDaysNeeded + 5)); // Add extra days for safety
-    }
-
-    // Ensure we have enough historical data
-    const daysDiff = Math.ceil((end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24));
-    if (daysDiff < minDaysNeeded) {
-      start.setDate(start.getDate() - (minDaysNeeded - daysDiff + 5)); // Add extra days for safety
-    }
-
-    const resp = await alpaca.getBarsV2(symbol, {
-      start: start.toISOString(),
-      end: end.toISOString(),
-      timeframe: timeframe,
-      feed: "iex",
-      adjustment: "all", // Include all adjustments
+    console.log("[Alpaca] Fetching historical bars:", {
+      symbol,
+      timeframe,
+      limit,
+      timestamp: new Date().toISOString(),
     });
 
-    // Convert response to array
-    const bars = [];
-    for await (const bar of resp) {
-      bars.push({
-        timestamp: bar.Timestamp,
-        open: Number(bar.OpenPrice),
-        high: Number(bar.HighPrice),
-        low: Number(bar.LowPrice),
-        close: Number(bar.ClosePrice),
-        volume: Number(bar.Volume),
-      });
+    // Calculate the end date (current time) and start date based on the limit
+    const end = new Date();
+    const start = new Date();
+
+    // Adjust start date based on timeframe and limit
+    switch (timeframe.toLowerCase()) {
+      case "1min":
+        start.setMinutes(start.getMinutes() - limit);
+        break;
+      case "5min":
+        start.setMinutes(start.getMinutes() - limit * 5);
+        break;
+      case "15min":
+        start.setMinutes(start.getMinutes() - limit * 15);
+        break;
+      case "1h":
+        start.setHours(start.getHours() - limit);
+        break;
+      case "4hour":
+      case "4h":
+        start.setHours(start.getHours() - limit * 4);
+        break;
+      case "1d":
+        start.setDate(start.getDate() - limit);
+        break;
+      default:
+        start.setHours(start.getHours() - limit * 4); // Default to 4h
     }
 
-    if (bars.length === 0) {
-      throw new Error("No historical data available for the specified period");
+    console.log("[Alpaca] Time range:", {
+      start: start.toISOString(),
+      end: end.toISOString(),
+    });
+
+    const bars = await alpaca.getBarsV2(symbol, {
+      start: start,
+      end: end,
+      timeframe: timeframe.toLowerCase() as any,
+      limit: limit,
+    });
+
+    const barArray = [];
+    for await (const bar of bars) {
+      barArray.push(bar);
     }
 
-    if (bars.length < minBarsNeeded) {
-      throw new Error(`Insufficient historical data. Retrieved ${bars.length} bars but need at least ${minBarsNeeded} bars for accurate backtesting.`);
-    }
+    console.log("[Alpaca] Fetched bars:", {
+      count: barArray.length,
+      firstBar: barArray[0],
+      lastBar: barArray[barArray.length - 1],
+    });
 
-    return bars;
+    return barArray;
   } catch (error) {
-    console.error("[Alpaca] Error fetching bars:", error);
+    console.error(`[Alpaca] Error fetching bars for ${symbol}:`, error);
     throw error;
   }
 }
@@ -204,4 +214,4 @@ async function getPositions(): Promise<Position[]> {
 }
 
 // Update exports
-export { alpaca, getHistoricalBars, getAccount, getPositions };
+export { alpaca, getAccount, getPositions };

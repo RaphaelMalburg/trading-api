@@ -1,5 +1,5 @@
 import { createCanvas, Canvas, CanvasRenderingContext2D } from "canvas";
-import { calculateEMA, calculateBollingerBands, calculateRSI, findPivotPoints, identifyTrendlines } from "../utils/indicators";
+import { calculateEMA, calculateBollingerBands, calculateRSI, findPivotPoints, identifyTrendlines } from "../utils/indicators.js";
 
 interface OHLCData {
   timestamp: string;
@@ -48,63 +48,85 @@ class ChartAnalysisService {
   };
 
   public async generateAnalysisChart(data: OHLCData[], symbol: string): Promise<Buffer> {
-    console.log(`[Chart] Generating analysis chart for ${symbol} with ${data.length} bars`);
+    try {
+      console.log("[Chart] Generating analysis chart for:", {
+        symbol,
+        barsCount: data.length,
+        firstBar: data[0],
+        lastBar: data[data.length - 1],
+      });
 
-    const canvas = createCanvas(ChartAnalysisService.CHART_DIMENSIONS.width, ChartAnalysisService.CHART_DIMENSIONS.height);
-    const ctx = canvas.getContext("2d");
+      const width = 1200;
+      const height = 800;
+      const canvas = createCanvas(width, height);
+      const ctx = canvas.getContext("2d");
 
-    // Set background
-    ctx.fillStyle = ChartAnalysisService.COLORS.background;
-    ctx.fillRect(0, 0, ChartAnalysisService.CHART_DIMENSIONS.width, ChartAnalysisService.CHART_DIMENSIONS.height);
+      // Set background
+      ctx.fillStyle = "#ffffff";
+      ctx.fillRect(0, 0, width, height);
 
-    // Calculate technical indicators
-    const closePrices = data.map((bar) => bar.close);
-    const ema20 = calculateEMA(closePrices, 20);
-    const ema50 = calculateEMA(closePrices, 50);
-    const ema200 = calculateEMA(closePrices, 200);
-    const bb = calculateBollingerBands(closePrices);
-    const rsi = calculateRSI(closePrices);
+      // Calculate price range
+      const prices = data.map((bar) => [bar.high, bar.low]).flat();
+      const minPrice = Math.min(...prices);
+      const maxPrice = Math.max(...prices);
+      const priceRange = maxPrice - minPrice;
+      const padding = priceRange * 0.1; // Add 10% padding
 
-    // Find key levels
-    const levels = this.findKeyLevels(data);
+      // Calculate scaling factors
+      const xScale = (width - 100) / data.length;
+      const yScale = (height - 100) / (priceRange + 2 * padding);
 
-    // Calculate chart layout
-    const mainChartHeight = ChartAnalysisService.CHART_DIMENSIONS.height * 0.7;
-    const volumeHeight = ChartAnalysisService.CHART_DIMENSIONS.height * 0.15;
-    const rsiHeight = ChartAnalysisService.CHART_DIMENSIONS.height * 0.15;
-    const volumeStartY = mainChartHeight + 10;
-    const rsiStartY = volumeStartY + volumeHeight + 10;
+      // Draw price axis
+      ctx.strokeStyle = "#000000";
+      ctx.beginPath();
+      ctx.moveTo(50, 0);
+      ctx.lineTo(50, height - 50);
+      ctx.lineTo(width, height - 50);
+      ctx.stroke();
 
-    // Draw components
-    this.drawPriceChart(ctx, data, mainChartHeight, levels);
-    this.drawVolumeChart(ctx, data, volumeHeight, volumeStartY);
-    this.drawRSIChart(ctx, rsi, rsiHeight, rsiStartY);
-    this.drawTechnicalIndicators(
-      ctx,
-      data,
-      {
-        ema20,
-        ema50,
-        ema200,
-        bb,
-      },
-      mainChartHeight
-    );
+      // Draw candlesticks
+      data.forEach((bar, i) => {
+        const x = 50 + i * xScale;
+        const open = height - 50 - (bar.open - minPrice + padding) * yScale;
+        const close = height - 50 - (bar.close - minPrice + padding) * yScale;
+        const high = height - 50 - (bar.high - minPrice + padding) * yScale;
+        const low = height - 50 - (bar.low - minPrice + padding) * yScale;
 
-    // Add metadata and annotations
-    this.drawChartMetadata(ctx, {
-      symbol,
-      period: "4H",
-      indicators: ["EMA(20,50,200)", "BB(20,2)", "RSI(14)"],
-      levels,
-    });
+        // Draw candlestick body
+        ctx.fillStyle = bar.close > bar.open ? "#00ff00" : "#ff0000";
+        ctx.fillRect(x - 2, Math.min(open, close), 4, Math.abs(close - open));
 
-    // Add pattern annotations
-    const patterns = this.identifyPatterns(data);
-    this.annotatePatterns(ctx, patterns, data);
+        // Draw wicks
+        ctx.strokeStyle = "#000000";
+        ctx.beginPath();
+        ctx.moveTo(x, high);
+        ctx.lineTo(x, Math.min(open, close));
+        ctx.moveTo(x, Math.max(open, close));
+        ctx.lineTo(x, low);
+        ctx.stroke();
+      });
 
-    console.log(`[Chart] Chart generation completed for ${symbol}`);
-    return canvas.toBuffer("image/png");
+      // Add timestamp and symbol
+      ctx.fillStyle = "#000000";
+      ctx.font = "14px Arial";
+      const timestamp = new Date().toISOString();
+      ctx.fillText(`${symbol} - Generated at: ${timestamp}`, 60, 30);
+
+      // Convert to buffer
+      const buffer = canvas.toBuffer("image/png");
+
+      console.log("[Chart] Chart generated:", {
+        timestamp,
+        symbol,
+        bufferLength: buffer.length,
+        preview: buffer.toString("base64").substring(0, 50) + "...",
+      });
+
+      return buffer;
+    } catch (error) {
+      console.error("[Chart] Error generating analysis chart:", error);
+      throw error;
+    }
   }
 
   private drawPriceChart(ctx: CanvasRenderingContext2D, data: OHLCData[], height: number, levels: TechnicalLevels): void {
