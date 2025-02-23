@@ -102,6 +102,7 @@ export async function getHistoricalBars(symbol: string, timeframe: string, limit
       end: end,
       timeframe: timeframe.toLowerCase() as any,
       limit: limit,
+      feed: "iex",
     });
 
     const barArray = [];
