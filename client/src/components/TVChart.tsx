@@ -21,24 +21,73 @@ interface TVChartProps {
   };
 }
 
-// Technical Analysis Functions
-function calculateEMA(data: number[], period: number): number[] {
+// Utility function to calculate EMA
+function calculateEMA(prices: number[], period: number): number[] {
+  if (prices.length < period) {
+    return Array(prices.length).fill(prices[0]);
+  }
+
   const k = 2 / (period + 1);
   const emaData: number[] = [];
-  let ema = data[0];
 
-  for (let i = 0; i < data.length; i++) {
-    if (i === 0) {
-      emaData.push(ema);
-    } else {
-      ema = data[i] * k + ema * (1 - k);
-      emaData.push(ema);
-    }
+  // Calculate initial SMA
+  let sum = 0;
+  for (let i = 0; i < period; i++) {
+    sum += prices[i];
+  }
+  let ema = sum / period;
+  emaData.push(ema);
+
+  // Calculate subsequent EMAs
+  for (let i = period; i < prices.length; i++) {
+    ema = prices[i] * k + ema * (1 - k);
+    emaData.push(ema);
+  }
+
+  // Pad the beginning with the first EMA value
+  while (emaData.length < prices.length) {
+    emaData.unshift(emaData[0]);
   }
 
   return emaData;
 }
 
+// Utility function to calculate RSI
+function calculateRSI(prices: number[], period: number = 14): number[] {
+  const rsiData: number[] = [];
+  const gains: number[] = [];
+  const losses: number[] = [];
+
+  // Calculate price changes and separate gains and losses
+  for (let i = 1; i < prices.length; i++) {
+    const change = prices[i] - prices[i - 1];
+    gains.push(change > 0 ? change : 0);
+    losses.push(change < 0 ? -change : 0);
+  }
+
+  // Calculate initial averages
+  let avgGain = gains.slice(0, period).reduce((sum, gain) => sum + gain, 0) / period;
+  let avgLoss = losses.slice(0, period).reduce((sum, loss) => sum + loss, 0) / period;
+
+  // First RSI value
+  let rs = avgGain / avgLoss;
+  let rsi = 100 - 100 / (1 + rs);
+  rsiData.push(rsi);
+
+  // Calculate subsequent values
+  for (let i = period; i < prices.length - 1; i++) {
+    avgGain = (avgGain * (period - 1) + gains[i]) / period;
+    avgLoss = (avgLoss * (period - 1) + losses[i]) / period;
+
+    rs = avgGain / avgLoss;
+    rsi = 100 - 100 / (1 + rs);
+    rsiData.push(rsi);
+  }
+
+  return rsiData;
+}
+
+// Technical Analysis Functions
 function calculateBollingerBands(data: number[], period: number = 20, stdDev: number = 2): { upper: number[]; middle: number[]; lower: number[] } {
   const sma = data.map((_, idx, arr) => {
     if (idx < period - 1) return null;
@@ -67,63 +116,57 @@ function calculateBollingerBands(data: number[], period: number = 20, stdDev: nu
   };
 }
 
-function calculateRSI(data: number[], period: number = 14): number[] {
-  const changes = data.map((price, index) => {
-    if (index === 0) return 0;
-    return price - data[index - 1];
-  });
-
-  const gains = changes.map((change) => (change > 0 ? change : 0));
-  const losses = changes.map((change) => (change < 0 ? -change : 0));
-
-  const rsiData: number[] = [];
-  let avgGain = gains.slice(1, period + 1).reduce((a, b) => a + b, 0) / period;
-  let avgLoss = losses.slice(1, period + 1).reduce((a, b) => a + b, 0) / period;
-
-  for (let i = period; i < data.length; i++) {
-    if (i > period) {
-      avgGain = (avgGain * (period - 1) + gains[i]) / period;
-      avgLoss = (avgLoss * (period - 1) + losses[i]) / period;
-    }
-
-    const rs = avgGain / avgLoss;
-    const rsi = 100 - 100 / (1 + rs);
-    rsiData.push(rsi);
-  }
-
-  return rsiData;
-}
-
-export function TVChart({ data, colors = {} }: TVChartProps) {
-  const mainChartRef = useRef<HTMLDivElement>(null);
+export default function TVChart({ data, colors = {} }: TVChartProps) {
+  const chartContainerRef = useRef<HTMLDivElement>(null);
   const rsiChartRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<IChartApi | null>(null);
-  const rsiChartApiRef = useRef<IChartApi | null>(null);
+  const rsiChartRef2 = useRef<IChartApi | null>(null);
 
   useEffect(() => {
-    if (!mainChartRef.current || !rsiChartRef.current) return;
+    if (!chartContainerRef.current || !rsiChartRef.current) return;
 
-    // Main chart
-    const chart = createChart(mainChartRef.current, {
+    // Create main chart
+    const chart = createChart(chartContainerRef.current, {
       layout: {
         background: { type: ColorType.Solid, color: colors.backgroundColor || "white" },
         textColor: colors.textColor || "black",
       },
-      width: mainChartRef.current.clientWidth,
-      height: 400,
+      width: chartContainerRef.current.clientWidth,
+      height: 450,
       grid: {
         vertLines: { visible: false },
         horzLines: { visible: false },
       },
       rightPriceScale: {
-        borderVisible: false,
+        borderVisible: true,
+        borderColor: "rgba(70, 130, 180, 0.2)",
+        entireTextOnly: true,
+        scaleMargins: {
+          top: 0.05,
+          bottom: 0.05,
+        },
+        visible: true,
+        alignLabels: true,
+        autoScale: true,
+        ticksVisible: true,
+      },
+      leftPriceScale: {
+        visible: false,
       },
       timeScale: {
-        borderVisible: false,
+        borderVisible: true,
+        borderColor: "rgba(70, 130, 180, 0.2)",
+        timeVisible: true,
+        secondsVisible: false,
+        rightOffset: 35,
+        barSpacing: 8,
+        minBarSpacing: 6,
+        fixLeftEdge: true,
+        lockVisibleTimeRangeOnResize: true,
       },
     });
 
-    // RSI chart
+    // Create RSI chart
     const rsiChart = createChart(rsiChartRef.current, {
       layout: {
         background: { type: ColorType.Solid, color: colors.backgroundColor || "white" },
@@ -136,155 +179,240 @@ export function TVChart({ data, colors = {} }: TVChartProps) {
         horzLines: { visible: false },
       },
       rightPriceScale: {
-        borderVisible: false,
+        borderVisible: true,
+        borderColor: "rgba(70, 130, 180, 0.2)",
+        entireTextOnly: true,
+        scaleMargins: {
+          top: 0.05,
+          bottom: 0.05,
+        },
+        visible: true,
+        alignLabels: true,
+        autoScale: true,
+        ticksVisible: true,
+      },
+      leftPriceScale: {
+        visible: false,
       },
       timeScale: {
-        borderVisible: false,
+        borderVisible: true,
+        borderColor: "rgba(70, 130, 180, 0.2)",
+        timeVisible: true,
+        secondsVisible: false,
+        rightOffset: 35,
+        barSpacing: 8,
+        minBarSpacing: 6,
+        fixLeftEdge: true,
+        lockVisibleTimeRangeOnResize: true,
       },
     });
 
-    // Main chart setup
-    const mainSeries = chart.addCandlestickSeries({
+    // Transform and validate data
+    const transformedData = data
+      .filter((bar) => {
+        if (!bar || typeof bar !== "object") {
+          console.error("Invalid bar data: not an object", bar);
+          return false;
+        }
+
+        const hasRequiredFields = "timestamp" in bar && "open" in bar && "high" in bar && "low" in bar && "close" in bar;
+
+        if (!hasRequiredFields) {
+          console.error("Invalid bar data: missing required fields", {
+            bar,
+            hasTimestamp: "timestamp" in bar,
+            hasOpen: "open" in bar,
+            hasHigh: "high" in bar,
+            hasLow: "low" in bar,
+            hasClose: "close" in bar,
+          });
+          return false;
+        }
+
+        const allFieldsAreValid = !isNaN(Number(bar.open)) && !isNaN(Number(bar.high)) && !isNaN(Number(bar.low)) && !isNaN(Number(bar.close)) && Boolean(bar.timestamp);
+
+        if (!allFieldsAreValid) {
+          console.error("Invalid bar data: invalid field values", {
+            bar,
+            openValid: !isNaN(Number(bar.open)),
+            highValid: !isNaN(Number(bar.high)),
+            lowValid: !isNaN(Number(bar.low)),
+            closeValid: !isNaN(Number(bar.close)),
+            timestampValid: Boolean(bar.timestamp),
+          });
+          return false;
+        }
+
+        return true;
+      })
+      .map((bar) => {
+        try {
+          const timestamp = new Date(bar.timestamp).getTime() / 1000;
+          if (isNaN(timestamp)) {
+            console.error("Invalid timestamp format", bar.timestamp);
+            return null;
+          }
+
+          return {
+            time: timestamp as Time,
+            open: Number(bar.open),
+            high: Number(bar.high),
+            low: Number(bar.low),
+            close: Number(bar.close),
+          };
+        } catch (error) {
+          console.error("Error transforming bar data", { bar, error });
+          return null;
+        }
+      })
+      .filter((bar): bar is NonNullable<typeof bar> => bar !== null)
+      .sort((a, b) => (a.time as number) - (b.time as number));
+
+    if (transformedData.length === 0) {
+      console.error("No valid data points after transformation", { originalLength: data.length });
+      return;
+    }
+
+    // Add candlestick series with proper price format
+    const candlestickSeries = chart.addCandlestickSeries({
       upColor: "#26a69a",
       downColor: "#ef5350",
       borderVisible: false,
       wickUpColor: "#26a69a",
       wickDownColor: "#ef5350",
+      priceFormat: {
+        type: "price",
+        precision: 2,
+        minMove: 0.01,
+      },
     });
 
-    const priceData = data.map((bar) => ({
-      time: Math.floor(new Date(bar.timestamp).getTime() / 1000) as Time,
-      open: bar.open,
-      high: bar.high,
-      low: bar.low,
-      close: bar.close,
-    }));
+    // Set candlestick data
+    candlestickSeries.setData(transformedData);
 
-    mainSeries.setData(priceData);
+    // Calculate and add EMAs and Bollinger Bands
+    const closePrices = transformedData.map((bar) => bar.close);
 
-    // Calculate and add EMAs
-    const closePrices = data.map((bar) => bar.close);
+    // EMA 20 (faster EMA)
     const ema20 = calculateEMA(closePrices, 20);
-    const ema50 = calculateEMA(closePrices, 50);
-    const ema200 = calculateEMA(closePrices, 200);
-
     const ema20Series = chart.addLineSeries({
       color: "#2196F3",
-      lineWidth: 1,
+      lineWidth: 2,
       title: "EMA 20",
       lastValueVisible: true,
-      priceLineVisible: false,
+      priceFormat: {
+        type: "price",
+        precision: 2,
+        minMove: 0.01,
+      },
     });
+
+    // EMA 50 (medium EMA)
+    const ema50 = calculateEMA(closePrices, 50);
     const ema50Series = chart.addLineSeries({
       color: "#FF9800",
-      lineWidth: 1,
+      lineWidth: 2,
       title: "EMA 50",
       lastValueVisible: true,
-      priceLineVisible: false,
+      priceFormat: {
+        type: "price",
+        precision: 2,
+        minMove: 0.01,
+      },
     });
+
+    // EMA 200 (slower EMA)
+    const ema200 = calculateEMA(closePrices, 200);
     const ema200Series = chart.addLineSeries({
       color: "#E91E63",
-      lineWidth: 1,
+      lineWidth: 2,
       title: "EMA 200",
       lastValueVisible: true,
-      priceLineVisible: false,
-    });
-
-    ema20Series.setData(
-      data.map((bar, i) => ({
-        time: Math.floor(new Date(bar.timestamp).getTime() / 1000) as Time,
-        value: ema20[i],
-      }))
-    );
-
-    ema50Series.setData(
-      data.map((bar, i) => ({
-        time: Math.floor(new Date(bar.timestamp).getTime() / 1000) as Time,
-        value: ema50[i],
-      }))
-    );
-
-    ema200Series.setData(
-      data.map((bar, i) => ({
-        time: Math.floor(new Date(bar.timestamp).getTime() / 1000) as Time,
-        value: ema200[i],
-      }))
-    );
-
-    // Calculate and add Bollinger Bands
-    const bb = calculateBollingerBands(closePrices);
-    const bbUpperSeries = chart.addLineSeries({
-      color: "#9C27B0",
-      lineWidth: 1,
-      lineStyle: LineStyle.Dotted,
-      title: "BB Upper",
-      lastValueVisible: true,
-      priceLineVisible: false,
-    });
-    const bbMiddleSeries = chart.addLineSeries({
-      color: "#9C27B0",
-      lineWidth: 1,
-      title: "BB Middle",
-      lastValueVisible: true,
-      priceLineVisible: false,
-    });
-    const bbLowerSeries = chart.addLineSeries({
-      color: "#9C27B0",
-      lineWidth: 1,
-      lineStyle: LineStyle.Dotted,
-      title: "BB Lower",
-      lastValueVisible: true,
-      priceLineVisible: false,
-    });
-
-    bbUpperSeries.setData(
-      data.slice(-bb.upper.length).map((bar, i) => ({
-        time: Math.floor(new Date(bar.timestamp).getTime() / 1000) as Time,
-        value: bb.upper[i],
-      }))
-    );
-
-    bbMiddleSeries.setData(
-      data.slice(-bb.middle.length).map((bar, i) => ({
-        time: Math.floor(new Date(bar.timestamp).getTime() / 1000) as Time,
-        value: bb.middle[i],
-      }))
-    );
-
-    bbLowerSeries.setData(
-      data.slice(-bb.lower.length).map((bar, i) => ({
-        time: Math.floor(new Date(bar.timestamp).getTime() / 1000) as Time,
-        value: bb.lower[i],
-      }))
-    );
-
-    // Add volume series
-    const volumeSeries = chart.addHistogramSeries({
-      color: "#26a69a",
       priceFormat: {
-        type: "volume",
+        type: "price",
+        precision: 2,
+        minMove: 0.01,
       },
-      priceScaleId: "volume",
     });
 
-    // Configure the volume scale
-    chart.priceScale("volume").applyOptions({
-      scaleMargins: {
-        top: 0.8,
-        bottom: 0,
+    // Set EMA data with proper validation
+    const setEMAData = (series: ISeriesApi<"Line">, data: number[]) => {
+      series.setData(
+        transformedData.map((bar, i) => ({
+          time: bar.time,
+          value: Number.isFinite(data[i]) ? data[i] : bar.close,
+        }))
+      );
+    };
+
+    setEMAData(ema20Series, ema20);
+    setEMAData(ema50Series, ema50);
+    setEMAData(ema200Series, ema200);
+
+    // Calculate Bollinger Bands
+    const { upper, middle, lower } = calculateBollingerBands(closePrices, 20, 2);
+
+    // Add Bollinger Bands with proper price format
+    const upperBandSeries = chart.addLineSeries({
+      color: "rgba(76, 175, 80, 0.5)",
+      lineWidth: 1,
+      title: "Upper Band",
+      lineStyle: LineStyle.Dotted,
+      priceFormat: {
+        type: "price",
+        precision: 2,
+        minMove: 0.01,
       },
-      visible: false,
     });
 
-    const volumeData = data.map((bar) => ({
-      time: Math.floor(new Date(bar.timestamp).getTime() / 1000) as Time,
-      value: bar.volume,
-      color: bar.close >= bar.open ? "#26a69a80" : "#ef535080",
-    }));
+    const middleBandSeries = chart.addLineSeries({
+      color: "rgba(156, 39, 176, 0.5)",
+      lineWidth: 1,
+      title: "Middle Band",
+      lineStyle: LineStyle.Dotted,
+      priceFormat: {
+        type: "price",
+        precision: 2,
+        minMove: 0.01,
+      },
+    });
 
-    volumeSeries.setData(volumeData);
+    const lowerBandSeries = chart.addLineSeries({
+      color: "rgba(76, 175, 80, 0.5)",
+      lineWidth: 1,
+      title: "Lower Band",
+      lineStyle: LineStyle.Dotted,
+      priceFormat: {
+        type: "price",
+        precision: 2,
+        minMove: 0.01,
+      },
+    });
 
-    // RSI setup
+    // Set Bollinger Bands data
+    const offset = transformedData.length - upper.length;
+    upperBandSeries.setData(
+      transformedData.slice(offset).map((bar, i) => ({
+        time: bar.time,
+        value: upper[i],
+      }))
+    );
+
+    middleBandSeries.setData(
+      transformedData.slice(offset).map((bar, i) => ({
+        time: bar.time,
+        value: middle[i],
+      }))
+    );
+
+    lowerBandSeries.setData(
+      transformedData.slice(offset).map((bar, i) => ({
+        time: bar.time,
+        value: lower[i],
+      }))
+    );
+
+    // Calculate and add RSI
     const rsiValues = calculateRSI(closePrices);
     const rsiSeries = rsiChart.addLineSeries({
       color: "#7B1FA2",
@@ -295,45 +423,41 @@ export function TVChart({ data, colors = {} }: TVChartProps) {
         minMove: 0.01,
         formatter: (price: number) => price.toFixed(2),
       },
-      lastValueVisible: true,
-      priceLineVisible: false,
     });
 
     rsiSeries.setData(
-      data.slice(-rsiValues.length).map((bar, i) => ({
-        time: Math.floor(new Date(bar.timestamp).getTime() / 1000) as Time,
+      transformedData.slice(14).map((bar, i) => ({
+        time: bar.time,
         value: rsiValues[i],
       }))
     );
 
-    // Add RSI levels
-    const rsiUpperLevel = rsiChart.addLineSeries({
-      color: "#FF0000",
-      lineWidth: 1,
-      lineStyle: LineStyle.Dashed,
-      lastValueVisible: false,
-      priceLineVisible: false,
-    });
-
+    // Add RSI levels (30 and 70)
     const rsiLowerLevel = rsiChart.addLineSeries({
       color: "#00FF00",
       lineWidth: 1,
       lineStyle: LineStyle.Dashed,
       lastValueVisible: false,
-      priceLineVisible: false,
     });
 
-    rsiUpperLevel.setData(
-      data.map((bar) => ({
-        time: Math.floor(new Date(bar.timestamp).getTime() / 1000) as Time,
-        value: 70,
+    const rsiUpperLevel = rsiChart.addLineSeries({
+      color: "#FF0000",
+      lineWidth: 1,
+      lineStyle: LineStyle.Dashed,
+      lastValueVisible: false,
+    });
+
+    rsiLowerLevel.setData(
+      transformedData.map((bar) => ({
+        time: bar.time,
+        value: 30,
       }))
     );
 
-    rsiLowerLevel.setData(
-      data.map((bar) => ({
-        time: Math.floor(new Date(bar.timestamp).getTime() / 1000) as Time,
-        value: 30,
+    rsiUpperLevel.setData(
+      transformedData.map((bar) => ({
+        time: bar.time,
+        value: 70,
       }))
     );
 
@@ -352,38 +476,55 @@ export function TVChart({ data, colors = {} }: TVChartProps) {
       }
     });
 
-    // Fit the chart content
+    // Fit content
     chart.timeScale().fitContent();
     rsiChart.timeScale().fitContent();
 
-    chartRef.current = chart;
-    rsiChartApiRef.current = rsiChart;
+    // Set initial zoom level with some padding
+    const points = transformedData.length;
+    const firstPoint = transformedData[0].time;
+    const lastPoint = transformedData[points - 1].time;
+    const padding = ((lastPoint as number) - (firstPoint as number)) * 0.1; // 10% padding on each side
 
-    // Handle window resize
+    chart.timeScale().setVisibleRange({
+      from: ((firstPoint as number) - padding) as Time,
+      to: ((lastPoint as number) + padding) as Time,
+    });
+
+    rsiChart.timeScale().setVisibleRange({
+      from: ((firstPoint as number) - padding) as Time,
+      to: ((lastPoint as number) + padding) as Time,
+    });
+
+    // Handle resize
     const handleResize = () => {
-      if (mainChartRef.current && rsiChartRef.current && chart && rsiChart) {
-        chart.applyOptions({ width: mainChartRef.current.clientWidth });
-        rsiChart.applyOptions({ width: rsiChartRef.current.clientWidth });
+      if (chartContainerRef.current && rsiChartRef.current) {
+        chart.applyOptions({
+          width: chartContainerRef.current.clientWidth,
+        });
+        rsiChart.applyOptions({
+          width: rsiChartRef.current.clientWidth,
+        });
       }
     };
 
     window.addEventListener("resize", handleResize);
 
+    // Store chart references
+    chartRef.current = chart;
+    rsiChartRef2.current = rsiChart;
+
     // Cleanup
     return () => {
       window.removeEventListener("resize", handleResize);
-      if (chartRef.current) {
-        chartRef.current.remove();
-      }
-      if (rsiChartApiRef.current) {
-        rsiChartApiRef.current.remove();
-      }
+      chart.remove();
+      rsiChart.remove();
     };
   }, [data, colors]);
 
   return (
-    <div style={{ width: "100%", display: "flex", flexDirection: "column", gap: "8px" }}>
-      <div ref={mainChartRef} style={{ width: "100%", height: "400px" }} />
+    <div style={{ width: "100%", display: "flex", flexDirection: "column", gap: "1px" }}>
+      <div ref={chartContainerRef} style={{ width: "100%", height: "450px" }} />
       <div ref={rsiChartRef} style={{ width: "100%", height: "150px" }} />
     </div>
   );

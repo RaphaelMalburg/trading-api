@@ -1,7 +1,7 @@
 import express from "express";
 import cors from "cors";
 import { registerRoutes } from "./routes.js";
-import { DatabaseService } from "./services/database.js";
+import { database } from "./services/database.js";
 import dotenv from "dotenv";
 
 dotenv.config();
@@ -23,8 +23,8 @@ app.use(express.urlencoded({ limit: "50mb", extended: true }));
 async function startServer() {
   try {
     // Test database connection
-    const version = await DatabaseService.getInstance().testConnection();
-    console.log("Connected to database:", version);
+    await database.testConnection();
+    console.log("Connected to database:");
 
     // Register routes and start server
     await registerRoutes(app);

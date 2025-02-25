@@ -1,0 +1,79 @@
+// This is your Prisma schema file
+datasource db {
+    provider = "postgresql"
+    url      = env("DATABASE_URL")
+}
+
+generator client {
+    provider = "prisma-client-js"
+}
+
+model Backtest {
+    id                    Int                @id @default(autoincrement())
+    symbol                String
+    timeframe             String
+    startDate             DateTime
+    endDate               DateTime
+    initialBalance        Decimal
+    finalBalance          Decimal
+    totalTrades           Int
+    winningTrades         Int
+    losingTrades          Int
+    winRate               Decimal
+    averageWin            Decimal
+    averageLoss           Decimal
+    profitFactor          Decimal
+    maxDrawdown           Decimal
+    maxDrawdownPercentage Decimal
+    createdAt             DateTime           @default(now())
+    trades                BacktestTrade[]
+    analyses              BacktestAnalysis[]
+    equityCurve           EquityCurvePoint[]
+
+    @@map("backtests")
+}
+
+model BacktestTrade {
+    id            Int       @id @default(autoincrement())
+    backtest      Backtest  @relation(fields: [backtestId], references: [id], onDelete: Cascade)
+    backtestId    Int
+    symbol        String
+    side          String
+    entryPrice    Decimal
+    stopLoss      Decimal
+    takeProfit    Decimal
+    size          Decimal
+    entryTime     DateTime
+    exitTime      DateTime?
+    exitPrice     Decimal?
+    pnl           Decimal?
+    pnlPercentage Decimal?
+    reason        String?
+    createdAt     DateTime  @default(now())
+
+    @@map("backtest_trades")
+}
+
+model BacktestAnalysis {
+    id               Int      @id @default(autoincrement())
+    backtest         Backtest @relation(fields: [backtestId], references: [id], onDelete: Cascade)
+    backtestId       Int
+    timestamp        DateTime
+    chartImage       String
+    analysisResult   Json
+    technicalSignals Json
+    createdAt        DateTime @default(now())
+
+    @@map("backtest_analysis")
+}
+
+model EquityCurvePoint {
+    id         Int      @id @default(autoincrement())
+    backtest   Backtest @relation(fields: [backtestId], references: [id], onDelete: Cascade)
+    backtestId Int
+    timestamp  DateTime
+    balance    Decimal
+    createdAt  DateTime @default(now())
+
+    @@map("backtest_equity_curve")
+}

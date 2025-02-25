@@ -118,6 +118,59 @@ export function Backtest() {
     }
   };
 
+  const handleQuickBacktest = async () => {
+    try {
+      setLoading(true);
+      // Calculate dates relative to today
+      const today = new Date("2025-02-25"); // Hardcode today's date for testing
+      console.log(`[Client] ====== Quick Backtest ======`);
+      console.log(`[Client] System Date: ${today.toISOString()}`);
+
+      // Use data from Feb 1-10 2025 for testing
+      const endDate = new Date("2025-02-10");
+      const startDate = new Date("2025-02-01");
+      console.log(`[Client] Test Period: ${startDate.toISOString()} to ${endDate.toISOString()}`);
+
+      const response = await fetch("http://localhost:5000/api/backtest", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          symbol: "AAPL",
+          timeframe: "1Day",
+          startDate: startDate.toISOString(),
+          endDate: endDate.toISOString(),
+          initialBalance: 100000,
+          riskPerTrade: 1,
+          quickDevelopmentMode: true,
+        }),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.message || `HTTP error! status: ${response.status}`);
+      }
+
+      const result = await response.json();
+      setSelectedBacktestId(result.id);
+      console.log(`[Client] ====== Completed ======`);
+      toast({
+        title: "Quick Backtest Complete",
+        description: `Win Rate: ${(result.win_rate * 100).toFixed(1)}%, Profit Factor: ${result.profit_factor.toFixed(2)}`,
+      });
+    } catch (error) {
+      console.error("[Client] Error:", error);
+      toast({
+        title: "Error",
+        description: error instanceof Error ? error.message : "Failed to run backtest",
+        variant: "destructive",
+      });
+    } finally {
+      setLoading(false);
+    }
+  };
+
   return (
     <div className="container mx-auto p-4 space-y-8">
       <Card>
@@ -125,6 +178,18 @@ export function Backtest() {
           <CardTitle>Run New Backtest</CardTitle>
         </CardHeader>
         <CardContent>
+          <div className="flex justify-end mb-4">
+            <Button variant="outline" onClick={handleQuickBacktest} disabled={loading} className="mb-4">
+              {loading ? (
+                <>
+                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                  Running Quick Backtest...
+                </>
+              ) : (
+                "Quick Backtest AAPL (Last 10 Days)"
+              )}
+            </Button>
+          </div>
           <form onSubmit={handleSubmit} className="space-y-4">
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
               <div className="space-y-2">

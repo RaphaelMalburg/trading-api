@@ -3,6 +3,7 @@ import { getHistoricalBars } from "./alpaca.js";
 import { generateAnalysisChart } from "./chartAnalysis.js";
 import { database } from "./database.js";
 import type { BacktestResult, Trade } from "../types/trading.js";
+import { technicalAnalysis } from "./technicalAnalysis.js";
 
 class BacktestingService {
   private static instance: BacktestingService;
@@ -22,10 +23,17 @@ class BacktestingService {
     startDate: Date,
     endDate: Date,
     initialBalance: number = 100000,
-    riskPerTrade: number = 0.01
+    riskPerTrade: number = 0.01,
+    quickDevelopmentMode: boolean = false
   ): Promise<BacktestResult> {
     try {
-      console.log(`[Backtest] Starting backtest for ${symbol} from ${startDate.toISOString()} to ${endDate.toISOString()}`);
+      // Enhanced date logging
+      console.log("\n===========================================");
+      console.log("           BACKTEST DATE INFO              ");
+      console.log("===========================================");
+      console.log(`TODAY'S DATE: ${new Date("2025-02-25").toISOString()}`);
+      console.log(`TEST PERIOD: ${startDate.toISOString()} to ${endDate.toISOString()}`);
+      console.log("===========================================\n");
 
       // Validate dates
       if (startDate > endDate) {
@@ -33,57 +41,80 @@ class BacktestingService {
       }
 
       // Get historical bars
-      const bars = await getHistoricalBars(symbol, timeframe, undefined, startDate, endDate);
+      const bars = await getHistoricalBars(symbol, timeframe, quickDevelopmentMode ? 20 : 200);
 
-      // Validate we have enough bars
-      if (bars.length < 60) {
-        throw new Error(`Insufficient historical data. Need at least 60 bars, but got ${bars.length}. This could be due to market holidays or limited market hours.`);
+      // Filter bars to match date range
+      const filteredBars = bars.filter((bar) => {
+        const barDate = new Date(bar.timestamp);
+        return barDate >= startDate && barDate <= endDate;
+      });
+
+      // Log filtered bars count
+      console.log(`[Backtest] Processing ${filteredBars.length} bars for analysis`);
+
+      // Ensure we have at least some data
+      if (filteredBars.length === 0) {
+        throw new Error("No data available for the specified date range. This could be due to market holidays or limited market hours.");
       }
 
       const positions: Trade[] = [];
-      const equityCurve: { timestamp: string; balance: number }[] = [{ timestamp: bars[0].timestamp, balance: initialBalance }];
+      const equityCurve: { timestamp: string; balance: number }[] = [{ timestamp: filteredBars[0].timestamp, balance: initialBalance }];
       let balance = initialBalance;
-      const analysisHistory: { timestamp: string; chart_image: string; analysis_result: any }[] = [];
+      const analysisHistory: { timestamp: string; chart_image: string; analysis_result: any; technical_signals: any }[] = [];
 
       // Process each bar
-      for (let i = 60; i < bars.length; i++) {
-        const currentBar = bars[i];
+      const startIndex = quickDevelopmentMode ? Math.min(10, filteredBars.length - 1) : Math.min(20, filteredBars.length - 1);
+      const maxAnalyses = quickDevelopmentMode ? Math.min(10, filteredBars.length) : filteredBars.length;
+      let analysisCount = 0;
+
+      for (let i = startIndex; i < filteredBars.length && analysisCount < maxAnalyses; i++) {
+        const currentBar = filteredBars[i];
 
         // Update open positions
         await this.updateOpenPositions(positions, currentBar, balance);
 
         try {
-          // Get the last 60 bars for analysis
-          const analysisWindow = bars.slice(i - 60, i + 1);
+          // Get the last available bars for analysis
+          const analysisWindow = filteredBars.slice(Math.max(0, i - (quickDevelopmentMode ? 10 : 20)), i + 1);
           const chartImage = await generateAnalysisChart(analysisWindow, symbol);
-          const analysis = await aiAnalysis.analyzeChart(symbol, timeframe, balance, positions);
+
+          // Calculate technical signals
+          const technicalSignals = await technicalAnalysis.analyzeMarket(analysisWindow);
+
+          const analysis = await aiAnalysis.analyzeChart(symbol, timeframe, balance, positions, technicalSignals);
 
           // Save analysis history
           analysisHistory.push({
             timestamp: currentBar.timestamp,
             chart_image: chartImage.toString("base64"),
             analysis_result: analysis,
+            technical_signals: technicalSignals,
           });
+          analysisCount++;
 
           // Execute trades based on analysis
           if (positions.length < 3 && analysis.recommendation.action !== "hold" && analysis.confidence >= 75) {
             const position = await this.executePosition(symbol, analysis, currentBar, balance, riskPerTrade);
             if (position) {
               positions.push(position);
-              console.log(`[Backtest] New position opened: ${position.side} ${position.size} units at ${position.entry_price}`);
             }
           }
         } catch (error) {
-          console.error(`[Backtest] Error analyzing bar ${currentBar.timestamp}:`, error);
+          console.error(`[Backtest] Analysis error at ${currentBar.timestamp}:`, error);
         }
 
         // Update equity curve
         balance = this.calculateCurrentBalance(balance, positions);
         equityCurve.push({ timestamp: currentBar.timestamp, balance });
+
+        // Break early if in quick development mode and we've done enough analyses
+        if (quickDevelopmentMode && analysisCount >= 10) {
+          break;
+        }
       }
 
       // Close any remaining positions
-      this.closeAllPositions(positions, bars[bars.length - 1]);
+      this.closeAllPositions(positions, filteredBars[filteredBars.length - 1]);
 
       // Calculate final statistics
       const stats = this.calculateStatistics(positions, initialBalance, balance, equityCurve);
@@ -122,21 +153,21 @@ class BacktestingService {
         await database.addBacktestAnalysis(backtest.id, result.analysis_history);
         await database.addBacktestEquityCurve(backtest.id, result.equity_curve);
 
-        console.log(`[Backtest] Completed backtest for ${symbol}:`, {
-          total_trades: positions.length,
-          win_rate: stats.win_rate,
-          profit_factor: stats.profit_factor,
-          final_balance: balance,
-          analysis_count: analysisHistory.length,
+        console.log(`[Backtest] ====== Completed Successfully ======`);
+        console.log(`[Backtest] Summary for ${symbol}:`, {
+          trades: positions.length,
+          win_rate: (stats.win_rate * 100).toFixed(1) + "%",
+          profit_factor: stats.profit_factor.toFixed(2),
+          final_balance: "$" + balance.toFixed(2),
         });
 
         return result;
       } catch (error) {
-        console.error("[Backtest] Error saving results to database:", error);
+        console.error("[Backtest] Database error:", error);
         throw new Error("Failed to save backtest results to database");
       }
     } catch (error) {
-      console.error(`[Backtest] Error running backtest:`, error);
+      console.error(`[Backtest] Error:`, error);
       throw error;
     }
   }

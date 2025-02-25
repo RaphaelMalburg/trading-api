@@ -1,28 +1,19 @@
-import { drizzle } from "drizzle-orm/neon-http";
-import { neon } from "@neondatabase/serverless";
-import { backtests, backtestTrades, backtestAnalysis, backtestEquityCurve } from "../db/schema.js";
-import { eq, desc } from "drizzle-orm";
+import { PrismaClient } from "@prisma/client";
+import type {
+  Backtest,
+  BacktestTrade as PrismaBacktestTrade,
+  BacktestAnalysis as PrismaBacktestAnalysis,
+  EquityCurvePoint as PrismaEquityCurvePoint,
+  Prisma,
+} from "@prisma/client";
 import type { BacktestResult, Trade, AnalysisEntry, EquityCurvePoint } from "../types/trading.js";
-import type { InferInsertModel } from "drizzle-orm";
-import dotenv from "dotenv";
 
-dotenv.config();
-
-if (!process.env.DATABASE_URL) {
-  throw new Error("DATABASE_URL is not defined in environment variables");
-}
-
-const sql = neon(process.env.DATABASE_URL);
-const db = drizzle(sql);
-
-export class DatabaseService {
+class DatabaseService {
   private static instance: DatabaseService;
+  private prisma: PrismaClient;
 
   private constructor() {
-    // Initialize standalone backtest record
-    this.ensureStandaloneBacktest().catch((error) => {
-      console.error("[Database] Error ensuring standalone backtest:", error);
-    });
+    this.prisma = new PrismaClient();
   }
 
   public static getInstance(): DatabaseService {
@@ -32,295 +23,170 @@ export class DatabaseService {
     return DatabaseService.instance;
   }
 
-  private async ensureStandaloneBacktest() {
-    try {
-      // Check if standalone backtest exists
-      const existing = await db.select().from(backtests).where(eq(backtests.id, 0));
+  private handleError(operation: string, error: unknown): never {
+    console.error(`[Database] Error ${operation}:`, error);
+    throw error;
+  }
 
-      if (existing.length === 0) {
-        // Create standalone backtest record
-        await db.insert(backtests).values({
-          id: 0,
-          symbol: "STANDALONE",
-          timeframe: "NONE",
-          startDate: new Date(),
-          endDate: new Date(),
-          initialBalance: 0,
-          finalBalance: 0,
-          totalTrades: 0,
-          winningTrades: 0,
-          losingTrades: 0,
-          winRate: 0,
-          averageWin: 0,
-          averageLoss: 0,
-          profitFactor: 0,
-          maxDrawdown: 0,
-          maxDrawdownPercentage: 0,
-        });
-        console.log("[Database] Created standalone backtest record");
-      }
+  public async testConnection(): Promise<void> {
+    try {
+      await this.prisma.$connect();
+      console.log("[Database] Connection successful");
     } catch (error) {
-      console.error("[Database] Error creating standalone backtest:", error);
-      throw error;
+      this.handleError("testing connection", error);
     }
   }
 
-  public async testConnection(): Promise<string> {
+  public async createBacktest(result: BacktestResult) {
     try {
-      const result = await sql`SELECT version()`;
-      return result[0]?.version || "Unknown version";
+      return await this.prisma.backtest.create({
+        data: {
+          symbol: result.symbol,
+          timeframe: result.timeframe,
+          startDate: new Date(result.start_date),
+          endDate: new Date(result.end_date),
+          initialBalance: result.initial_balance,
+          finalBalance: result.final_balance,
+          totalTrades: result.total_trades,
+          winningTrades: result.winning_trades,
+          losingTrades: result.losing_trades,
+          winRate: result.win_rate,
+          averageWin: result.average_win,
+          averageLoss: result.average_loss,
+          profitFactor: result.profit_factor,
+          maxDrawdown: result.max_drawdown,
+          maxDrawdownPercentage: result.max_drawdown_percentage,
+        },
+      });
     } catch (error) {
-      console.error("[Database] Connection test failed:", error);
-      throw error;
+      this.handleError("creating backtest", error);
     }
   }
 
-  public async findTrades() {
+  public async addBacktestTrades(backtestId: number, trades: Trade[]) {
     try {
-      return await db.select().from(backtests);
-    } catch (error) {
-      console.error("[Database] Find trades failed:", error);
-      throw error;
-    }
-  }
-
-  public async insertTrade(data: InferInsertModel<typeof backtests>) {
-    try {
-      const [trade] = await db.insert(backtests).values(data).returning();
-      return trade;
-    } catch (error) {
-      console.error("[Database] Insert trade failed:", error);
-      throw error;
-    }
-  }
-
-  public async deleteTrade(id: number) {
-    try {
-      await db.delete(backtests).where(eq(backtests.id, id));
-    } catch (error) {
-      console.error("[Database] Delete trade failed:", error);
-      throw error;
-    }
-  }
-
-  async createBacktest(data: BacktestResult) {
-    try {
-      const [backtest] = await db
-        .insert(backtests)
-        .values({
-          symbol: data.symbol,
-          timeframe: data.timeframe,
-          startDate: new Date(data.start_date),
-          endDate: new Date(data.end_date),
-          initialBalance: data.initial_balance,
-          finalBalance: data.final_balance,
-          totalTrades: data.total_trades,
-          winningTrades: data.winning_trades,
-          losingTrades: data.losing_trades,
-          winRate: data.win_rate,
-          averageWin: data.average_win,
-          averageLoss: data.average_loss,
-          profitFactor: data.profit_factor,
-          maxDrawdown: data.max_drawdown,
-          maxDrawdownPercentage: data.max_drawdown_percentage,
-        })
-        .returning();
-
-      return backtest;
-    } catch (error) {
-      console.error("[Backtest DB] Error creating backtest:", error);
-      throw error;
-    }
-  }
-
-  async addBacktestTrades(backtestId: number, trades: Trade[]) {
-    try {
-      if (!trades || trades.length === 0) {
-        console.log("[Backtest DB] No trades to insert");
-        return;
-      }
-
-      const tradesToInsert = trades.map((trade) => ({
-        backtestId,
-        symbol: trade.symbol,
-        side: trade.side,
-        entryPrice: trade.entry_price,
-        stopLoss: trade.stop_loss,
-        takeProfit: trade.take_profit,
-        size: trade.size,
-        entryTime: new Date(trade.entry_time),
-        exitTime: trade.exit_time ? new Date(trade.exit_time) : null,
-        exitPrice: trade.exit_price,
-        pnl: trade.pnl,
-        pnlPercentage: trade.pnl_percentage,
-        reason: trade.reason,
-      }));
-
-      await db.insert(backtestTrades).values(tradesToInsert);
-    } catch (error) {
-      console.error("[Backtest DB] Error adding trades:", error);
-      throw error;
-    }
-  }
-
-  async addBacktestAnalysis(backtestId: number, analyses: AnalysisEntry[]) {
-    try {
-      const analysesToInsert = analyses.map((analysis) => {
-        // Log the incoming analysis data
-        console.log("[Database] Processing analysis for insertion:", {
-          timestamp: analysis.timestamp,
-          hasImage: !!analysis.chart_image,
-          imageLength: analysis.chart_image?.length,
-          analysisResult: {
-            trend: analysis.analysis_result?.trend,
-            confidence: analysis.analysis_result?.confidence,
-            action: analysis.analysis_result?.recommendation?.action,
-          },
-        });
-
-        return {
+      await this.prisma.backtestTrade.createMany({
+        data: trades.map((trade) => ({
           backtestId,
-          timestamp: new Date(analysis.timestamp),
-          chart_image: analysis.chart_image,
-          trend: analysis.analysis_result?.trend,
-          confidence: analysis.analysis_result?.confidence,
-          action: analysis.analysis_result?.recommendation?.action,
-          entryPrice: analysis.analysis_result?.recommendation?.entry_price,
-          stopLoss: analysis.analysis_result?.recommendation?.stop_loss,
-          takeProfit: analysis.analysis_result?.recommendation?.take_profit,
-          reasoning: analysis.analysis_result?.recommendation?.reasoning,
-          riskPercentage: analysis.analysis_result?.recommendation?.risk_percentage,
-          supportLevels: JSON.stringify(analysis.analysis_result?.key_levels?.support || []),
-          resistanceLevels: JSON.stringify(analysis.analysis_result?.key_levels?.resistance || []),
-          patterns: JSON.stringify(analysis.analysis_result?.patterns || []),
-          signals: JSON.stringify(analysis.analysis_result?.signals || {}),
-        };
+          symbol: trade.symbol,
+          side: trade.side,
+          entryPrice: trade.entry_price,
+          stopLoss: trade.stop_loss,
+          takeProfit: trade.take_profit,
+          size: trade.size,
+          entryTime: new Date(trade.entry_time),
+          exitTime: trade.exit_time ? new Date(trade.exit_time) : null,
+          exitPrice: trade.exit_price || null,
+          pnl: trade.pnl || null,
+          pnlPercentage: trade.pnl_percentage || null,
+          reason: trade.reason || null,
+        })),
+      });
+    } catch (error) {
+      this.handleError("adding backtest trades", error);
+    }
+  }
+
+  public async addBacktestAnalysis(backtestId: number, analysisHistory: AnalysisEntry[]) {
+    try {
+      await this.prisma.backtestAnalysis.createMany({
+        data: analysisHistory.map((entry) => ({
+          backtestId,
+          timestamp: new Date(entry.timestamp),
+          chartImage: entry.chart_image,
+          analysisResult: entry.analysis_result as unknown as Prisma.JsonObject,
+          technicalSignals: entry.technical_signals as unknown as Prisma.JsonObject,
+        })),
+      });
+    } catch (error) {
+      this.handleError("adding backtest analysis", error);
+    }
+  }
+
+  public async addBacktestEquityCurve(backtestId: number, equityCurve: EquityCurvePoint[]) {
+    try {
+      await this.prisma.equityCurvePoint.createMany({
+        data: equityCurve.map((point) => ({
+          backtestId,
+          timestamp: new Date(point.timestamp),
+          balance: point.balance,
+        })),
+      });
+    } catch (error) {
+      this.handleError("adding backtest equity curve", error);
+    }
+  }
+
+  public async getBacktest(backtestId: number): Promise<BacktestResult> {
+    try {
+      const backtest = await this.prisma.backtest.findUnique({
+        where: { id: backtestId },
+        include: {
+          trades: true,
+          analyses: true,
+          equityCurve: true,
+        },
       });
 
-      await db.insert(backtestAnalysis).values(analysesToInsert);
-    } catch (error) {
-      console.error("[Backtest DB] Error adding analyses:", error);
-      throw error;
-    }
-  }
-
-  async addBacktestEquityCurve(backtestId: number, equityCurve: EquityCurvePoint[]) {
-    try {
-      const pointsToInsert = equityCurve.map((point) => ({
-        backtestId,
-        timestamp: new Date(point.timestamp),
-        balance: point.balance,
-      }));
-
-      await db.insert(backtestEquityCurve).values(pointsToInsert);
-    } catch (error) {
-      console.error("[Backtest DB] Error adding equity curve:", error);
-      throw error;
-    }
-  }
-
-  async getBacktestById(id: number) {
-    try {
-      const backtest = await db.select().from(backtests).where(eq(backtests.id, id)).limit(1);
-
-      if (!backtest.length) return null;
-
-      const trades = await db.select().from(backtestTrades).where(eq(backtestTrades.backtestId, id));
-
-      const analyses = await db.select().from(backtestAnalysis).where(eq(backtestAnalysis.backtestId, id));
-
-      const equityCurve = await db.select().from(backtestEquityCurve).where(eq(backtestEquityCurve.backtestId, id));
+      if (!backtest) {
+        throw new Error(`Backtest with id ${backtestId} not found`);
+      }
 
       return {
-        ...backtest[0],
-        trades,
-        analyses,
-        equityCurve,
+        symbol: backtest.symbol,
+        timeframe: backtest.timeframe,
+        start_date: backtest.startDate.toISOString(),
+        end_date: backtest.endDate.toISOString(),
+        initial_balance: Number(backtest.initialBalance),
+        final_balance: Number(backtest.finalBalance),
+        total_trades: backtest.totalTrades,
+        winning_trades: backtest.winningTrades,
+        losing_trades: backtest.losingTrades,
+        win_rate: Number(backtest.winRate),
+        average_win: Number(backtest.averageWin),
+        average_loss: Number(backtest.averageLoss),
+        profit_factor: Number(backtest.profitFactor),
+        max_drawdown: Number(backtest.maxDrawdown),
+        max_drawdown_percentage: Number(backtest.maxDrawdownPercentage),
+        trades: backtest.trades.map((trade) => ({
+          symbol: trade.symbol,
+          side: trade.side as "long" | "short",
+          entry_price: Number(trade.entryPrice),
+          stop_loss: Number(trade.stopLoss),
+          take_profit: Number(trade.takeProfit),
+          size: Number(trade.size),
+          entry_time: trade.entryTime.toISOString(),
+          exit_time: trade.exitTime?.toISOString(),
+          exit_price: trade.exitPrice ? Number(trade.exitPrice) : undefined,
+          pnl: trade.pnl ? Number(trade.pnl) : undefined,
+          pnl_percentage: trade.pnlPercentage ? Number(trade.pnlPercentage) : undefined,
+          reason: trade.reason || undefined,
+        })),
+        equity_curve: backtest.equityCurve.map((point) => ({
+          timestamp: point.timestamp.toISOString(),
+          balance: Number(point.balance),
+        })),
+        analysis_history: backtest.analyses.map((entry) => ({
+          timestamp: entry.timestamp.toISOString(),
+          chart_image: entry.chartImage,
+          analysis_result: entry.analysisResult as unknown as AnalysisEntry["analysis_result"],
+          technical_signals: entry.technicalSignals as unknown as AnalysisEntry["technical_signals"],
+        })),
       };
     } catch (error) {
-      console.error("[Backtest DB] Error fetching backtest:", error);
-      throw error;
+      this.handleError("getting backtest", error);
     }
   }
 
-  async getAllBacktests() {
+  public async getBacktests(): Promise<BacktestResult[]> {
     try {
-      return await db.select().from(backtests).orderBy(desc(backtests.createdAt));
-    } catch (error) {
-      console.error("[Backtest DB] Error fetching all backtests:", error);
-      throw error;
-    }
-  }
-
-  async getAllAnalyses() {
-    try {
-      console.log("[Database] Fetching all analyses...");
-      const analyses = await db
-        .select()
-        .from(backtestAnalysis)
-        .where(eq(backtestAnalysis.backtestId, 0)) // Get standalone analyses
-        .orderBy(desc(backtestAnalysis.timestamp));
-
-      // Log raw data from database
-      if (analyses.length > 0) {
-        console.log("[Database] First analysis raw data:", {
-          id: analyses[0].id,
-          hasImage: !!analyses[0].chart_image,
-          imageLength: analyses[0].chart_image?.length,
-          allFields: Object.keys(analyses[0]),
-          trend: analyses[0].trend,
-          confidence: analyses[0].confidence,
-          action: analyses[0].action,
-        });
-      }
-
-      return analyses.map((analysis) => {
-        // Log each analysis transformation
-        console.log("[Database] Processing analysis:", {
-          id: analysis.id,
-          hasImage: !!analysis.chart_image,
-          imageLength: analysis.chart_image?.length,
-          trend: analysis.trend,
-          confidence: analysis.confidence,
-          action: analysis.action,
-        });
-
-        // Transform the data to match the frontend's expected structure
-        const transformedAnalysis = {
-          id: analysis.id,
-          timestamp: analysis.timestamp,
-          chart_image: analysis.chart_image,
-          trend: analysis.trend,
-          confidence: analysis.confidence,
-          key_levels: {
-            support: JSON.parse(analysis.supportLevels || "[]"),
-            resistance: JSON.parse(analysis.resistanceLevels || "[]"),
-          },
-          signals: JSON.parse(analysis.signals || "{}"),
-          recommendation: {
-            action: analysis.action,
-            entry_price: analysis.entryPrice,
-            stop_loss: analysis.stopLoss,
-            take_profit: analysis.takeProfit,
-            reasoning: analysis.reasoning,
-            risk_percentage: analysis.riskPercentage,
-          },
-          patterns: JSON.parse(analysis.patterns || "[]"),
-        };
-
-        // Log the transformed analysis
-        console.log("[Database] Transformed analysis:", {
-          id: transformedAnalysis.id,
-          trend: transformedAnalysis.trend,
-          confidence: transformedAnalysis.confidence,
-          action: transformedAnalysis.recommendation.action,
-        });
-
-        return transformedAnalysis;
+      const backtests = await this.prisma.backtest.findMany({
+        orderBy: { createdAt: "desc" },
       });
+
+      return await Promise.all(backtests.map((backtest) => this.getBacktest(backtest.id)));
     } catch (error) {
-      console.error("[Database] Error fetching analyses:", error);
-      throw error;
+      this.handleError("getting backtests", error);
     }
   }
 }

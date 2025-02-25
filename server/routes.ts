@@ -8,6 +8,7 @@ import { aiAnalysis } from "./services/aiAnalysis.js";
 import { getHistoricalBars } from "./services/alpaca.js";
 import { backtesting } from "./services/backtesting.js";
 import { database } from "./services/database.js";
+import { technicalAnalysis } from "./services/technicalAnalysis.js";
 
 const router = express.Router();
 
@@ -18,6 +19,28 @@ interface BacktestRequest {
   endDate: string;
   initialBalance: number;
   riskPerTrade: number;
+  quickDevelopmentMode?: boolean;
+}
+
+function validateBacktestRequest(symbol: string, timeframe: string, startDate: string, endDate: string, initialBalance: number, riskPerTrade: number): boolean {
+  // Check required parameters
+  if (!symbol || !timeframe || !startDate || !endDate || !initialBalance || !riskPerTrade) {
+    return false;
+  }
+
+  // Validate dates
+  const start = new Date(startDate);
+  const end = new Date(endDate);
+  if (isNaN(start.getTime()) || isNaN(end.getTime()) || start >= end) {
+    return false;
+  }
+
+  // Validate numeric values
+  if (initialBalance <= 0 || riskPerTrade <= 0 || riskPerTrade > 100) {
+    return false;
+  }
+
+  return true;
 }
 
 export async function registerRoutes(app: Express): Promise<Server> {
@@ -304,56 +327,34 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       console.log("[Backtest] Received request:", req.body);
 
-      const { symbol, timeframe, startDate, endDate, initialBalance, riskPerTrade } = req.body;
+      const { symbol, timeframe, startDate, endDate, initialBalance, riskPerTrade, quickDevelopmentMode = false } = req.body;
 
       // Validate required parameters
-      if (!symbol || !timeframe || !startDate || !endDate || !initialBalance || !riskPerTrade) {
-        return res.status(400).json({
-          error: "Missing required parameters",
-          required: ["symbol", "timeframe", "startDate", "endDate", "initialBalance", "riskPerTrade"],
-          received: req.body,
-        });
+      if (!validateBacktestRequest(symbol, timeframe, startDate, endDate, initialBalance, riskPerTrade)) {
+        res.status(400).json({ error: "Invalid request parameters" });
+        return;
       }
 
       // Parse dates
       const start = new Date(startDate);
       const end = new Date(endDate);
 
-      if (isNaN(start.getTime()) || isNaN(end.getTime())) {
-        return res.status(400).json({
-          error: "Invalid date format",
-          startDate,
-          endDate,
-        });
-      }
-
-      if (start >= end) {
-        return res.status(400).json({
-          error: "Start date must be before end date",
-          startDate,
-          endDate,
-        });
-      }
-
       // Run backtest
       console.log(`[Backtest] Running backtest for ${symbol} from ${startDate} to ${endDate}`);
-      const result = await backtesting.runBacktest(symbol, timeframe, start, end, initialBalance, riskPerTrade);
+      const result = await backtesting.runBacktest(symbol, timeframe, start, end, initialBalance, riskPerTrade, quickDevelopmentMode);
 
       console.log(`[Backtest] Completed with ${result.total_trades} trades`);
       res.json(result);
     } catch (error) {
-      console.error("[Backtest] Error:", error);
-      res.status(500).json({
-        error: "Backtest failed",
-        message: error instanceof Error ? error.message : "Unknown error",
-      });
+      console.error("[API] Error running backtest:", error);
+      res.status(500).json({ error: error instanceof Error ? error.message : "Unknown error occurred" });
     }
   });
 
   // Backtest endpoints
-  app.get("/api/backtests", async (req, res) => {
+  app.get("/api/backtests", async (_req, res) => {
     try {
-      const backtests = await database.getAllBacktests();
+      const backtests = await database.getBacktests();
       res.json(backtests);
     } catch (error) {
       console.error("[API] Error fetching backtests:", error);
@@ -363,7 +364,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.get("/api/backtests/:id", async (req, res) => {
     try {
-      const backtest = await database.getBacktestById(Number(req.params.id));
+      const backtest = await database.getBacktest(Number(req.params.id));
       if (!backtest) {
         res.status(404).json({ error: "Backtest not found" });
         return;
@@ -375,81 +376,35 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.post("/api/backtest", async (req, res) => {
-    try {
-      const { symbol, timeframe, startDate, endDate, initialBalance, riskPerTrade } = req.body;
-
-      const result = await backtesting.runBacktest(symbol, timeframe, new Date(startDate), new Date(endDate), Number(initialBalance), Number(riskPerTrade));
-
-      res.json(result);
-    } catch (error) {
-      console.error("[API] Error running backtest:", error);
-      res.status(500).json({ error: "Failed to run backtest" });
-    }
-  });
-
   // Analysis endpoints
-  app.get("/api/analysis/history", async (req, res) => {
+  app.get("/api/analyses", async (_req, res) => {
     try {
-      console.log("[API] Fetching analysis history...");
-
-      // Disable compression for this endpoint
-      res.setHeader("Content-Encoding", "identity");
-
-      const analyses = await database.getAllAnalyses();
-
-      // Log the response size
-      const responseData = JSON.stringify(analyses);
-      console.log("[API] Response size:", {
-        length: responseData.length,
-        analysesCount: analyses.length,
-        firstAnalysisHasImage: analyses.length > 0 ? !!analyses[0].chart_image : false,
-      });
-
-      // Set correct content length and type
-      res.setHeader("Content-Length", Buffer.byteLength(responseData));
-      res.setHeader("Content-Type", "application/json");
-      res.setHeader("Cache-Control", "no-cache");
-
-      // Send the response
-      res.send(responseData);
+      const backtests = await database.getBacktests();
+      const analyses = backtests.flatMap((backtest) => backtest.analysis_history);
+      res.json(analyses);
     } catch (error) {
-      console.error("[API] Error fetching analysis history:", error);
-      res.status(500).json({
-        error: "Failed to fetch analysis history",
-        details: error instanceof Error ? error.message : "Unknown error",
-      });
+      console.error("[API] Error fetching analyses:", error);
+      res.status(500).json({ error: "Failed to fetch analyses" });
     }
   });
 
   app.post("/api/analysis", async (req, res) => {
     try {
-      console.log("[API] Storing analysis result...");
-      const analysis = req.body;
+      const { symbol, timeframe } = req.body;
+      const bars = await getHistoricalBars(symbol, timeframe, 60);
+      const chartImage = await generateAnalysisChart(bars, symbol);
+      const technicalSignals = await technicalAnalysis.analyzeMarket(bars);
+      const analysis = await aiAnalysis.analyzeChart(symbol, timeframe, 100000, [], technicalSignals);
 
-      // Store the analysis in the database
-      const result = await database.addBacktestAnalysis(analysis.backtestId, [
-        {
-          timestamp: new Date().toISOString(),
-          chart_image: analysis.chartImage || "",
-          analysis_result: {
-            trend: analysis.trend,
-            confidence: analysis.confidence,
-            key_levels: analysis.key_levels,
-            signals: analysis.signals,
-            recommendation: analysis.recommendation,
-            patterns: analysis.patterns,
-          },
-        },
-      ]);
-
-      res.json(result);
-    } catch (error) {
-      console.error("[API] Error storing analysis:", error);
-      res.status(500).json({
-        error: "Failed to store analysis",
-        details: error instanceof Error ? error.message : "Unknown error",
+      res.json({
+        timestamp: new Date().toISOString(),
+        chart_image: chartImage.toString("base64"),
+        analysis_result: analysis,
+        technical_signals: technicalSignals,
       });
+    } catch (error) {
+      console.error("[API] Error generating analysis:", error);
+      res.status(500).json({ error: "Failed to generate analysis" });
     }
   });
 

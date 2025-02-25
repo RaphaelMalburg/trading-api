@@ -22,6 +22,13 @@
       "when": 1740250632500,
       "tag": "0002_busy_odin",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1740473156932,
+      "tag": "0003_init",
+      "breakpoints": true
     }
   ]
 }
